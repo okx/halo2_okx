@@ -21,6 +21,7 @@ mod error;
 mod keygen;
 mod lookup;
 pub(crate) mod permutation;
+mod plonky2;
 mod vanishing;
 
 mod prover;
