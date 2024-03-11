@@ -1,5 +1,5 @@
 use core::ops::{Add, Mul, Neg, Sub};
-use ff::Field;
+use ff::{Field, WithSmallOrderMulGroup};
 use plonky2_field::goldilocks_field::GoldilocksField as GoldilocksFieldInner;
 use plonky2_field::types::{Field as Plonky2_Field, Field64, PrimeField as Plonky2_PrimeField};
 use rand::RngCore;
@@ -275,6 +275,10 @@ impl ff::PrimeField for GoldilocksField {
     fn is_odd(&self) -> Choice {
         Choice::from(self.to_repr()[0] & 1)
     }
+}
+
+impl WithSmallOrderMulGroup<3> for GoldilocksField {
+    const ZETA: Self = GoldilocksField::from_raw(18446744065119617025);
 }
 
 #[cfg(test)]

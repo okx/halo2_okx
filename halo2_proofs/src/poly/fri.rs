@@ -2,4 +2,8 @@
 //! scheme described in the paper.
 //!
 
-use plonky2;
+mod prover;
+mod verifier;
+
+pub use prover::create_proof;
+pub use verifier::verify_proof;
