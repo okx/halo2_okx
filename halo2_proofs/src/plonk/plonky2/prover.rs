@@ -1,9 +1,14 @@
 use crate::plonk::{
-    lookup, permutation, vanishing, Advice, Any, Assignment,
+    Advice, Any, Assignment,
     Circuit, Column, ConstraintSystem, Error, Fixed,
     FloorPlanner, Instance, Selector,
 };
-use crate::plonk::plonky2::Scalar;
+use crate::plonk::plonky2::{
+    permutation,
+    GenericConfig2,
+    vanishing,
+    // lookup
+};
 use std::iter;
 use ff::Field;
 use rand_core::RngCore;
@@ -15,35 +20,33 @@ use crate::{
     arithmetic::eval_polynomial,
     circuit::Value,
     plonk::Assigned,
-    poly::{batch_invert_assigned, fri},
-    transcript::{EncodedChallenge, TranscriptWrite},
 };
 
 use crate::poly::{
     self,
     commitment::Blind,
-    multiopen::{self, ProverQuery},
+    batch_invert_assigned,
+    fri::{self, ProverQuery},
     Coeff, ExtendedLagrangeCoeff, LagrangeCoeff, Polynomial,
 };
 
 use plonky2::iop::challenger::Challenger;
 // use plonky2::field::polynomial::{PolynomialCoeffs, PolynomialValues};
-use plonky2::plonk::config::{GenericConfig, Hasher};
+use plonky2::plonk::config::Hasher;
 
 /// This creates a proof for the provided `circuit` when given the public
 /// parameters `params` and the proving key [`ProvingKey`] that was
 /// generated previously for the same circuit. The provided `instances`
 /// are zero-padded internally.
 pub fn create_plonky2_proof<
-    F: Scalar<D>,
-    C: GenericConfig<D, F = F>,
+    G: GenericConfig2,
     const D: usize,
     R: RngCore,
-    ConcreteCircuit: Circuit<F>,
+    ConcreteCircuit: Circuit<G::F>,
 >(
-    pk: &ProvingKey<F, C, D>,
+    pk: &ProvingKey<G>,
     circuits: &[ConcreteCircuit],
-    instances: &[&[&[F]]],
+    instances: &[&[&[G::F]]],
     mut rng: R,
 ) -> Result<(), Error> {
     if circuits.len() != instances.len() {
@@ -55,10 +58,10 @@ pub fn create_plonky2_proof<
             return Err(Error::InvalidInstances);
         }
     }
-    let mut challenger = Challenger::<F, C::Hasher>::new();
+    let mut challenger = Challenger::<G::F, G::Hasher>::new();
 
     // Hash verification key into transcript
-    challenger.observe_hash::<C::Hasher>(pk.vk.transcript_repr);
+    challenger.observe_hash::<G::Hasher>(pk.vk.transcript_repr);
 
     let domain = &pk.vk.domain;
     let mut meta = ConstraintSystem::default();
@@ -68,15 +71,15 @@ pub fn create_plonky2_proof<
     // // from the verification key.
     let meta = &pk.vk.cs;
 
-    struct InstanceSingle<F: Field> {
-        pub instance_values: Vec<Polynomial<F, LagrangeCoeff>>,
-        pub instance_polys: Vec<Polynomial<F, Coeff>>,
-        pub instance_cosets: Vec<Polynomial<F, ExtendedLagrangeCoeff>>,
+    struct InstanceSingle<G: GenericConfig2> {
+        pub instance_values: Vec<Polynomial<G::F, LagrangeCoeff>>,
+        pub instance_polys: Vec<Polynomial<G::F, Coeff>>,
+        pub instance_cosets: Vec<Polynomial<G::F, ExtendedLagrangeCoeff>>,
     }
 
-    let instance: Vec<InstanceSingle<F>> = instances
+    let instance: Vec<InstanceSingle<G>> = instances
         .iter()
-        .map(|instance| -> Result<InstanceSingle<F>, Error> {
+        .map(|instance| -> Result<InstanceSingle<G>, Error> {
             let instance_values = instance
                 .iter()
                 .map(|values| {
@@ -90,8 +93,8 @@ pub fn create_plonky2_proof<
                     }
 
                     // Observe the instance.
-                    let public_inputs_hash = C::InnerHasher::hash_no_pad(&values);
-                    challenger.observe_hash::<C::InnerHasher>(public_inputs_hash);
+                    let public_inputs_hash = G::InnerHasher::hash_no_pad(&values);
+                    challenger.observe_hash::<G::InnerHasher>(public_inputs_hash);
                     Ok(poly)
                 })
                 .collect::<Result<Vec<_>, _>>()?;
@@ -117,17 +120,17 @@ pub fn create_plonky2_proof<
         })
         .collect::<Result<Vec<_>, _>>()?;
 
-    struct AdviceSingle<F> {
-        pub advice_values: Vec<Polynomial<F, LagrangeCoeff>>,
-        pub advice_polys: Vec<Polynomial<F, Coeff>>,
-        pub advice_cosets: Vec<Polynomial<F, ExtendedLagrangeCoeff>>,
-        pub advice_blinds: Vec<Blind<F>>,
+    struct AdviceSingle<G: GenericConfig2> {
+        pub advice_values: Vec<Polynomial<G::F, LagrangeCoeff>>,
+        pub advice_polys: Vec<Polynomial<G::F, Coeff>>,
+        pub advice_cosets: Vec<Polynomial<G::F, ExtendedLagrangeCoeff>>,
+        pub advice_blinds: Vec<Blind<G::F>>,
     }
 
-    let advice: Vec<AdviceSingle<C>> = circuits
+    let advice: Vec<AdviceSingle<G>> = circuits
         .iter()
         .zip(instances.iter())
-        .map(|(circuit, instances)| -> Result<AdviceSingle<C>, Error> {
+        .map(|(circuit, instances)| -> Result<AdviceSingle<G>, Error> {
             struct WitnessCollection<'a, F: Field> {
                 k: u32,
                 pub advice: Vec<Polynomial<Assigned<F>, LagrangeCoeff>>,
@@ -285,12 +288,12 @@ pub fn create_plonky2_proof<
             // Add blinding factors to advice columns
             for advice in &mut advice {
                 for cell in &mut advice[unusable_rows_start..] {
-                    *cell = F::random(&mut rng);
+                    *cell = G::F::random(&mut rng);
                 }
             }
 
             // Compute commitments to advice column polynomials
-            let advice_blinds: Vec<_> = advice.iter().map(|_| Blind(F::random(&mut rng))).collect();
+            let advice_blinds: Vec<_> = advice.iter().map(|_| Blind(G::F::random(&mut rng))).collect();
 
             let advice_polys: Vec<_> = advice
                 .clone()
@@ -435,7 +438,7 @@ pub fn create_plonky2_proof<
     let gamma = challenger.get_challenge();
 
     // Commit to permutations.
-    let permutations: Vec<permutation::prover::Committed<C, _>> = instance
+    let permutations: Vec<permutation::prover::Committed<G, _>> = instance
         .iter()
         .zip(advice.iter())
         .map(|(instance, advice)| {
@@ -476,7 +479,7 @@ pub fn create_plonky2_proof<
         // .collect::<Result<Vec<_>, _>>()?;
 
     // Commit to the vanishing argument's random polynomial for blinding h(x_3)
-    let vanishing = vanishing::Argument::commit(domain, &mut rng, challenger)?;
+    let vanishing = vanishing::Argument::commit(domain, &mut rng, &mut challenger)?;
 
     // Obtain challenge for keeping all separate gates linearly independent
     let y = challenger.get_challenge();
@@ -565,7 +568,7 @@ pub fn create_plonky2_proof<
         expressions,
         y,
         &mut rng,
-        challenger
+        &mut challenger
     )?;
 
     let x = challenger.get_challenge();
@@ -633,7 +636,7 @@ pub fn create_plonky2_proof<
     pk.permutation.evaluate(x, challenger)?;
 
     // Evaluate the permutations, if any, at omega^i x.
-    let permutations: Vec<permutation::prover::Evaluated<C>> = permutations
+    let permutations: Vec<permutation::prover::Evaluated<G>> = permutations
         .into_iter()
         .map(|permutation| -> Result<_, _> { permutation.evaluate(pk, x, challenger) })
         .collect::<Result<Vec<_>, _>>()?;
@@ -662,7 +665,7 @@ pub fn create_plonky2_proof<
                         .instance_queries
                         .iter()
                         .map(move |&(column, at)| ProverQuery {
-                            point: domain.rotate_omega(*x, at),
+                            point: domain.rotate_omega(x, at),
                             poly: &instance.instance_polys[column.index()],
                             blind: Blind::default(),
                         }),
@@ -673,7 +676,7 @@ pub fn create_plonky2_proof<
                         .advice_queries
                         .iter()
                         .map(move |&(column, at)| ProverQuery {
-                            point: domain.rotate_omega(*x, at),
+                            point: domain.rotate_omega(x, at),
                             poly: &advice.advice_polys[column.index()],
                             blind: advice.advice_blinds[column.index()],
                         }),
@@ -687,7 +690,7 @@ pub fn create_plonky2_proof<
                 .fixed_queries
                 .iter()
                 .map(|&(column, at)| ProverQuery {
-                    point: domain.rotate_omega(*x, at),
+                    point: domain.rotate_omega(x, at),
                     poly: &pk.fixed_polys[column.index()],
                     blind: Blind::default(),
                 }),

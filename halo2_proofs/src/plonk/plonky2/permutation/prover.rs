@@ -1,7 +1,5 @@
 use group::ff::{BatchInvert, Field, PrimeField};
-use std::marker::PhantomData;
-use plonky2::plonk::config::GenericConfig;
-use crate::plonk::plonky2::Scalar;
+use crate::plonk::plonky2::GenericConfig2;
 use rand_core::RngCore;
 use std::iter::{self, ExactSizeIterator};
 use plonky2::iop::challenger::Challenger;
@@ -14,58 +12,54 @@ use crate::{
     poly::{
         self,
         commitment::{Blind, Params},
-        multiopen::ProverQuery,
+        fri::ProverQuery,
         Coeff, ExtendedLagrangeCoeff, LagrangeCoeff, Polynomial, Rotation,
     },
     transcript::{EncodedChallenge, TranscriptWrite},
 };
 
-pub struct CommittedSet<F: Scalar<D>, Ev, const D: usize> {
-    permutation_product_poly: Polynomial<F, Coeff>,
+pub struct CommittedSet<G: GenericConfig2, Ev> {
+    permutation_product_poly: Polynomial<G::F, Coeff>,
     permutation_product_coset: poly::AstLeaf<Ev, ExtendedLagrangeCoeff>,
-    permutation_product_blind: Blind<F>,
+    permutation_product_blind: Blind<G::F>,
 }
 
-pub(crate) struct Committed<F: Scalar<D>, C: GenericConfig<D, F = F>, const D: usize, Ev> {
-    sets: Vec<CommittedSet<F, Ev, D>>,
-    _marker: PhantomData<C>,
+pub(crate) struct Committed<G: GenericConfig2, Ev> {
+    sets: Vec<CommittedSet<G, Ev>>
 }
 
-pub struct ConstructedSet<F: Scalar<D>, const D: usize > {
-    permutation_product_poly: Polynomial<F, Coeff>,
-    permutation_product_blind: Blind<F>,
+pub struct ConstructedSet<G: GenericConfig2 > {
+    permutation_product_poly: Polynomial<G::F, Coeff>,
+    permutation_product_blind: Blind<G::F>,
 }
 
-pub(crate) struct Constructed<F: Scalar<D>, C: GenericConfig<D, F = F>, const D: usize> {
-    sets: Vec<ConstructedSet<F, D>>,
-    _marker: PhantomData<C>,
+pub(crate) struct Constructed<G: GenericConfig2> {
+    sets: Vec<ConstructedSet<G>>
 }
 
-pub(crate) struct Evaluated<F: Scalar<D>, C: GenericConfig<D, F = F>, const D: usize> {
-    constructed: Constructed<F, C, D>,
+pub(crate) struct Evaluated<G: GenericConfig2> {
+    constructed: Constructed<G>,
 }
 
 impl Argument {
     #[allow(clippy::too_many_arguments)]
     pub(in crate::plonk) fn commit<
-        F: Scalar<D>,
-        C: GenericConfig<D, F = F>,
-        const D: usize,
+        G: GenericConfig2,
         Ev: Copy + Send + Sync,
         R: RngCore
     >(
         &self,
-        pk: &plonk::plonky2::ProvingKey<F, C, D>,
-        pkey: &ProvingKey<F, D>,
-        advice: &[Polynomial<F, LagrangeCoeff>],
-        fixed: &[Polynomial<F, LagrangeCoeff>],
-        instance: &[Polynomial<F, LagrangeCoeff>],
-        beta: F,
-        gamma: F,
-        evaluator: &mut poly::Evaluator<Ev, F, ExtendedLagrangeCoeff>,
+        pk: &plonk::plonky2::ProvingKey<G>,
+        pkey: &ProvingKey<G>,
+        advice: &[Polynomial<G::F, LagrangeCoeff>],
+        fixed: &[Polynomial<G::F, LagrangeCoeff>],
+        instance: &[Polynomial<G::F, LagrangeCoeff>],
+        beta: G::F,
+        gamma: G::F,
+        evaluator: &mut poly::Evaluator<Ev, G::F, ExtendedLagrangeCoeff>,
         mut rng: R,
-        transcript: &mut Challenger<F, C::Hasher>,
-    ) -> Result<Committed<F, C, D, Ev>, Error> {
+        transcript: &mut Challenger<G::F, G::Hasher>,
+    ) -> Result<Committed<G, Ev>, Error> {
         let domain = &pk.vk.domain;
 
         // How many columns can be included in a single permutation polynomial?
@@ -77,10 +71,10 @@ impl Argument {
         let blinding_factors = pk.vk.cs.blinding_factors();
 
         // Each column gets its own delta power.
-        let mut deltaomega = <F as ff::Field>::ONE;
+        let mut deltaomega = <G::F as ff::Field>::ONE;
 
         // Track the "last" value from the previous column set
-        let mut last_z = <F as ff::Field>::ONE;
+        let mut last_z = <G::F as ff::Field>::ONE;
 
         let mut sets = vec![];
 
@@ -97,7 +91,7 @@ impl Argument {
             // where p_j(X) is the jth column in this permutation,
             // and i is the ith row of the column.
 
-            let mut modified_values = vec![<F as ff::Field>::ONE; domain.n as usize];
+            let mut modified_values = vec![<G::F as ff::Field>::ONE; domain.n as usize];
 
             // Iterate over each column of the permutation
             for (&column, permuted_column_values) in columns.iter().zip(permutations.iter()) {
@@ -112,7 +106,7 @@ impl Argument {
                         .zip(values[column.index()][start..].iter())
                         .zip(permuted_column_values[start..].iter())
                     {
-                        *modified_values *= &(*beta * permuted_value + &*gamma + value);
+                        *modified_values *= &(beta * permuted_value + &gamma + value);
                     }
                 });
             }
@@ -136,11 +130,11 @@ impl Argument {
                         .zip(values[column.index()][start..].iter())
                     {
                         // Multiply by p_j(\omega^i) + \delta^j \omega^i \beta
-                        *modified_values *= &(deltaomega * &*beta + &*gamma + value);
+                        *modified_values *= &(deltaomega * &beta + &gamma + value);
                         deltaomega *= &omega;
                     }
                 });
-                deltaomega *= &F::DELTA;
+                deltaomega *= &G::F::DELTA;
             }
 
             // The modified_values vector is a vector of products of fractions
@@ -164,12 +158,12 @@ impl Argument {
             let mut z = domain.lagrange_from_vec(z);
             // Set blinding factors
             for z in &mut z[domain.n as usize - blinding_factors..] {
-                *z = F::random(&mut rng);
+                *z = G::F::random(&mut rng);
             }
             // Set new last_z
             last_z = z[domain.n as usize - (blinding_factors + 1)];
 
-            let blind = Blind(F::random(&mut rng));
+            let blind = Blind(G::F::random(&mut rng));
 
             // let permutation_product_commitment_projective = params.commit_lagrange(&z, blind);
             let permutation_product_blind = blind;
@@ -192,15 +186,15 @@ impl Argument {
             });
         }
 
-        Ok(Committed { sets, _marker: PhantomData })
+        Ok(Committed { sets })
     }
 }
 
-impl<F: Scalar<D>, C: GenericConfig<D, F = F>, const D: usize, Ev: Copy + Send + Sync> Committed<F, C, D, Ev> {
+impl<G: GenericConfig2, Ev: Copy + Send + Sync> Committed<G, Ev> {
     #[allow(clippy::too_many_arguments)]
     pub(in crate::plonk) fn construct<'a>(
         self,
-        pk: &'a plonk::plonky2::ProvingKey<F, C, D>,
+        pk: &'a plonk::plonky2::ProvingKey<G>,
         p: &'a Argument,
         advice_cosets: &'a [poly::AstLeaf<Ev, ExtendedLagrangeCoeff>],
         fixed_cosets: &'a [poly::AstLeaf<Ev, ExtendedLagrangeCoeff>],
@@ -209,11 +203,11 @@ impl<F: Scalar<D>, C: GenericConfig<D, F = F>, const D: usize, Ev: Copy + Send +
         l0: poly::AstLeaf<Ev, ExtendedLagrangeCoeff>,
         l_blind: poly::AstLeaf<Ev, ExtendedLagrangeCoeff>,
         l_last: poly::AstLeaf<Ev, ExtendedLagrangeCoeff>,
-        beta: F,
-        gamma: F,
+        beta: G::F,
+        gamma: G::F,
     ) -> (
-        Constructed<F, C, D>,
-        impl Iterator<Item = poly::Ast<Ev, F, ExtendedLagrangeCoeff>> + 'a,
+        Constructed<G>,
+        impl Iterator<Item = poly::Ast<Ev, G::F, ExtendedLagrangeCoeff>> + 'a,
     ) {
         let chunk_len = pk.vk.cs_degree - 2;
         let blinding_factors = pk.vk.cs.blinding_factors();
@@ -227,8 +221,7 @@ impl<F: Scalar<D>, C: GenericConfig<D, F = F>, const D: usize, Ev: Copy + Send +
                     permutation_product_poly: set.permutation_product_poly.clone(),
                     permutation_product_blind: set.permutation_product_blind,
                 })
-                .collect(),
-            _marker: PhantomData,
+                .collect()
         };
 
         let expressions = iter::empty()
@@ -275,7 +268,7 @@ impl<F: Scalar<D>, C: GenericConfig<D, F = F>, const D: usize, Ev: Copy + Send +
                     .zip(permutation_cosets.chunks(chunk_len))
                     .enumerate()
                     .map(move |(chunk_index, ((set, columns), cosets))| {
-                        let mut left = poly::Ast::<_, F, _>::from(
+                        let mut left = poly::Ast::<_, G::F, _>::from(
                             set.permutation_product_coset
                                 .with_rotation(Rotation::next()),
                         );
@@ -288,14 +281,14 @@ impl<F: Scalar<D>, C: GenericConfig<D, F = F>, const D: usize, Ev: Copy + Send +
                             })
                             .zip(cosets.iter())
                         {
-                            left *= poly::Ast::<_, F, _>::from(*values)
+                            left *= poly::Ast::<_, G::F, _>::from(*values)
                                 + (poly::Ast::ConstantTerm(beta) * poly::Ast::from(*permutation))
                                 + poly::Ast::ConstantTerm(gamma);
                         }
 
                         let mut right = poly::Ast::from(set.permutation_product_coset);
                         let mut current_delta = beta
-                            * &(F::DELTA.pow_vartime([(chunk_index * chunk_len) as u64]));
+                            * &(G::F::DELTA.pow_vartime([(chunk_index * chunk_len) as u64]));
                         for values in columns.iter().map(|&column| match column.column_type() {
                             Any::Advice => &advice_cosets[column.index()],
                             Any::Fixed => &fixed_cosets[column.index()],
@@ -304,7 +297,7 @@ impl<F: Scalar<D>, C: GenericConfig<D, F = F>, const D: usize, Ev: Copy + Send +
                             right *= poly::Ast::from(*values)
                                 + poly::Ast::LinearTerm(current_delta)
                                 + poly::Ast::ConstantTerm(gamma);
-                            current_delta *= &F::DELTA;
+                            current_delta *= &G::F::DELTA;
                         }
 
                         (left - right) * (poly::Ast::one() - (poly::Ast::from(l_last) + l_blind))
@@ -315,39 +308,41 @@ impl<F: Scalar<D>, C: GenericConfig<D, F = F>, const D: usize, Ev: Copy + Send +
     }
 }
 
-// impl<F: Scalar<D>, const D: usize> super::ProvingKey<F, D> {
-    // pub(in crate::plonk) fn open(
-        // &self,
-        // x: F,
-    // ) -> impl Iterator<Item = ProverQuery<'_, C>> + Clone {
-        // self.polys.iter().map(move |poly| ProverQuery {
-            // point: *x,
-            // poly,
-            // blind: Blind::default(),
-        // })
-    // }
+impl<G: GenericConfig2> super::ProvingKey<G> {
+    pub(in crate::plonk) fn open(
+        &self,
+        x: G::F,
+    ) -> impl Iterator<Item = ProverQuery<'_, G>> + Clone {
+        self.polys.iter().map(move |poly| ProverQuery {
+            point: x,
+            poly,
+            blind: Blind::default(),
+        })
+    }
 
-    // pub(in crate::plonk) fn evaluate<E: EncodedChallenge<C>, T: TranscriptWrite<C, E>>(
-        // &self,
-        // x: ChallengeX<C>,
+    pub(in crate::plonk) fn evaluate(
+        &self,
+        x: G::F,
+        challenger: &mut Challenger<G::F, G::Hasher>,
         // transcript: &mut T,
-    // ) -> Result<(), Error> {
-        // // Hash permutation evals
-        // for eval in self.polys.iter().map(|poly| eval_polynomial(poly, *x)) {
+    ) -> Result<(), Error> {
+        // Hash permutation evals
+        for eval in self.polys.iter().map(|poly| eval_polynomial(poly, x)) {
             // transcript.write_scalar(eval)?;
-        // }
+            challenger.observe_element(eval);
+        }
 
-        // Ok(())
-    // }
-// }
+        Ok(())
+    }
+}
 
-impl<F: Scalar<D>, C: GenericConfig<D, F = F>, const D: usize> Constructed<F, C, D> {
+impl<G: GenericConfig2> Constructed<G> {
     pub(in crate::plonk) fn evaluate(
         self,
-        pk: &plonk::plonky2::ProvingKey<F, C, D>,
-        x: F,
-        challenger: &mut Challenger<F, C::Hasher>,
-    ) -> Result<Evaluated<F, C, D>, Error> {
+        pk: &plonk::plonky2::ProvingKey<G>,
+        x: G::F,
+        challenger: &mut Challenger<G::F, G::Hasher>,
+    ) -> Result<Evaluated<G>, Error> {
         let domain = &pk.vk.domain;
         let blinding_factors = pk.vk.cs.blinding_factors();
 
@@ -388,12 +383,12 @@ impl<F: Scalar<D>, C: GenericConfig<D, F = F>, const D: usize> Constructed<F, C,
     }
 }
 
-impl<F: Scalar<D>, C: GenericConfig<D, F = F>, const D: usize> Evaluated<F, C, D> {
+impl<G: GenericConfig2> Evaluated<G> {
     pub(in crate::plonk) fn open<'a>(
         &'a self,
-        pk: &'a plonk::plonky2::ProvingKey<F, C, D>,
-        x: F,
-    ) -> impl Iterator<Item = ProverQuery<'a, F>> + Clone {
+        pk: &'a plonk::plonky2::ProvingKey<G>,
+        x: G::F,
+    ) -> impl Iterator<Item = ProverQuery<'a, G>> + Clone {
         let blinding_factors = pk.vk.cs.blinding_factors();
         let x_next = pk.vk.domain.rotate_omega(x, Rotation::next());
         let x_last = pk
