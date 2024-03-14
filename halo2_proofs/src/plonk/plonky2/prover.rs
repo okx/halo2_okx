@@ -48,6 +48,7 @@ pub fn create_plonky2_proof<
     circuits: &[ConcreteCircuit],
     instances: &[&[&[G::F]]],
     mut rng: R,
+    challenger: &mut Challenger<G::F, G::Hasher>,
 ) -> Result<(), Error> {
     if circuits.len() != instances.len() {
         return Err(Error::InvalidInstances);
@@ -58,7 +59,7 @@ pub fn create_plonky2_proof<
             return Err(Error::InvalidInstances);
         }
     }
-    let mut challenger = Challenger::<G::F, G::Hasher>::new();
+    // let mut challenger = Challenger::<G::F, G::Hasher>::new();
 
     // Hash verification key into transcript
     challenger.observe_hash::<G::Hasher>(pk.vk.transcript_repr);
@@ -438,24 +439,25 @@ pub fn create_plonky2_proof<
     let gamma = challenger.get_challenge();
 
     // Commit to permutations.
-    let permutations: Vec<permutation::prover::Committed<G, _>> = instance
-        .iter()
-        .zip(advice.iter())
-        .map(|(instance, advice)| {
-            pk.vk.cs.permutation.commit(
-                pk,
-                &pk.permutation,
-                &advice.advice_values,
-                &pk.fixed_values,
-                &instance.instance_values,
-                beta,
-                gamma,
-                &mut coset_evaluator,
-                &mut rng,
-                challenger
-            )
-        })
-        .collect::<Result<Vec<_>, _>>()?;
+    let permutations: Vec<permutation::prover::Committed<G, _>> = vec![];
+    // let permutations: Vec<permutation::prover::Committed<G, _>> = instance
+        // .iter()
+        // .zip(advice.iter())
+        // .map(|(instance, advice)| {
+            // pk.vk.cs.permutation.commit(
+                // pk,
+                // &pk.permutation,
+                // &advice.advice_values,
+                // &pk.fixed_values,
+                // &instance.instance_values,
+                // beta,
+                // gamma,
+                // &mut coset_evaluator,
+                // &mut rng,
+                // challenger
+            // )
+        // })
+        // .collect::<Result<Vec<_>, _>>()?;
 
     // let lookups: Vec<Vec<lookup::prover::Committed<C, _>>> = lookups
         // .into_iter()
@@ -479,7 +481,7 @@ pub fn create_plonky2_proof<
         // .collect::<Result<Vec<_>, _>>()?;
 
     // Commit to the vanishing argument's random polynomial for blinding h(x_3)
-    let vanishing = vanishing::Argument::commit(domain, &mut rng, &mut challenger)?;
+    let vanishing = vanishing::Argument::commit(domain, &mut rng, challenger)?;
 
     // Obtain challenge for keeping all separate gates linearly independent
     let y = challenger.get_challenge();
@@ -568,7 +570,7 @@ pub fn create_plonky2_proof<
         expressions,
         y,
         &mut rng,
-        &mut challenger
+        challenger
     )?;
 
     let x = challenger.get_challenge();
@@ -620,7 +622,7 @@ pub fn create_plonky2_proof<
         .fixed_queries
         .iter()
         .map(|&(column, at)| {
-            eval_polynomial(&pk.fixed_polys[column.index()], domain.rotate_omega(*x, at))
+            eval_polynomial(&pk.fixed_polys[column.index()], domain.rotate_omega(x, at))
         })
         .collect();
 

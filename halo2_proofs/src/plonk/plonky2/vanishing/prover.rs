@@ -132,7 +132,7 @@ impl<G: GenericConfig2> Constructed<G> {
         x: G::F,
         xn: G::F,
         domain: &EvaluationDomain<G::F>,
-        // transcript: &mut T,
+        challenger: &mut Challenger<G::F, G::Hasher>,
     ) -> Result<Evaluated<G>, Error> {
         let h_poly = self
             .h_pieces

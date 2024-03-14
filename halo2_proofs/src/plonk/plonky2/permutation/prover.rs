@@ -5,7 +5,8 @@ use std::iter::{self, ExactSizeIterator};
 use plonky2::iop::challenger::Challenger;
 
 use super::super::super::{circuit::Any, ChallengeBeta, ChallengeGamma, ChallengeX};
-use super::{Argument, ProvingKey};
+use super::ProvingKey;
+use plonk::permutation::Argument;
 use crate::{
     arithmetic::{eval_polynomial, parallelize},
     plonk::{self, Error},
@@ -43,7 +44,7 @@ pub(crate) struct Evaluated<G: GenericConfig2> {
 
 impl Argument {
     #[allow(clippy::too_many_arguments)]
-    pub(in crate::plonk) fn commit<
+    pub(in crate::plonk) fn commit_plonky2<
         G: GenericConfig2,
         Ev: Copy + Send + Sync,
         R: RngCore
