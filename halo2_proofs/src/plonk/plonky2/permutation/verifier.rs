@@ -3,7 +3,8 @@ use group::ff::{Field, PrimeField};
 use std::iter;
 
 use super::super::{circuit::Any, ChallengeBeta, ChallengeGamma, ChallengeX};
-use super::{Argument, VerifyingKey};
+use super::VerifyingKey;
+use plonk::permutation::Argument;
 use crate::{
     arithmetic::CurveAffine,
     plonk::{self, Error},

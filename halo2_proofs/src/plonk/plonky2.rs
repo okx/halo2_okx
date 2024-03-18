@@ -13,10 +13,12 @@ mod verifier;
 mod permutation;
 mod vanishing;
 mod transcript;
+mod keygen;
 
 pub use prover::*;
 pub use verifier::*;
 pub use transcript::*;
+pub use keygen::*;
 
 /// This is a verifying key which allows for the verification of proofs for a
 /// particular circuit.

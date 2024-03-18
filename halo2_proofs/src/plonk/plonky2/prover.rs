@@ -439,25 +439,24 @@ pub fn create_plonky2_proof<
     let gamma = challenger.get_challenge();
 
     // Commit to permutations.
-    let permutations: Vec<permutation::prover::Committed<G, _>> = vec![];
-    // let permutations: Vec<permutation::prover::Committed<G, _>> = instance
-        // .iter()
-        // .zip(advice.iter())
-        // .map(|(instance, advice)| {
-            // pk.vk.cs.permutation.commit(
-                // pk,
-                // &pk.permutation,
-                // &advice.advice_values,
-                // &pk.fixed_values,
-                // &instance.instance_values,
-                // beta,
-                // gamma,
-                // &mut coset_evaluator,
-                // &mut rng,
-                // challenger
-            // )
-        // })
-        // .collect::<Result<Vec<_>, _>>()?;
+    let permutations: Vec<permutation::prover::Committed<G, _>> = instance
+        .iter()
+        .zip(advice.iter())
+        .map(|(instance, advice)| {
+            pk.vk.cs.permutation.commit_plonky2(
+                pk,
+                &pk.permutation,
+                &advice.advice_values,
+                &pk.fixed_values,
+                &instance.instance_values,
+                beta,
+                gamma,
+                &mut coset_evaluator,
+                &mut rng,
+                challenger
+            )
+        })
+        .collect::<Result<Vec<_>, _>>()?;
 
     // let lookups: Vec<Vec<lookup::prover::Committed<C, _>>> = lookups
         // .into_iter()
@@ -627,9 +626,9 @@ pub fn create_plonky2_proof<
         .collect();
 
     // Hash each fixed column evaluation
-    // for eval in fixed_evals.iter() {
-        // challenger.write_scalar(*eval)?;
-    // }
+    for eval in fixed_evals.iter() {
+        challenger.observe_element(*eval);
+    }
         challenger.observe_elements(&fixed_evals);
 
     let vanishing = vanishing.evaluate(x, xn, domain, challenger)?;
@@ -702,4 +701,62 @@ pub fn create_plonky2_proof<
         .chain(vanishing.open(x));
 
     fri::create_proof().map_err(|_| Error::Opening)
+}
+
+#[test]
+fn test_create_plonky2_proof() {
+    use crate::{
+        circuit::SimpleFloorPlanner,
+        plonk::plonky2::{keygen_pk, keygen_vk},
+        // transcript::{Blake2bWrite, Challenge255},
+    };
+    use field::goldilocks_field::GoldilocksField;
+    use rand_core::OsRng;
+
+    #[derive(Clone, Copy)]
+    struct MyCircuit;
+
+    impl<F: Field> Circuit<F> for MyCircuit {
+        type Config = ();
+
+        type FloorPlanner = SimpleFloorPlanner;
+
+        fn without_witnesses(&self) -> Self {
+            *self
+        }
+
+        fn configure(_meta: &mut ConstraintSystem<F>) -> Self::Config {}
+
+        fn synthesize(
+            &self,
+            _config: Self::Config,
+            _layouter: impl crate::circuit::Layouter<F>,
+        ) -> Result<(), Error> {
+            Ok(())
+        }
+    }
+
+    // let vk = keygen_vk(&params, &MyCircuit).expect("keygen_vk should not fail");
+    // let pk = keygen_pk(&params, vk, &MyCircuit).expect("keygen_pk should not fail");
+    let mut challenger = Challenger::new();
+
+    // Create proof with wrong number of instances
+    let proof = create_plonky2_proof(
+        &pk,
+        &[MyCircuit, MyCircuit],
+        &[],
+        OsRng,
+        &mut transcript,
+    );
+    assert!(matches!(proof.unwrap_err(), Error::InvalidInstances));
+
+    // Create proof with correct number of instances
+    create_plonky2_proof(
+        &pk,
+        &[MyCircuit, MyCircuit],
+        &[&[], &[]],
+        OsRng,
+        &mut challenger,
+    )
+    .expect("proof generation should not fail");
 }
