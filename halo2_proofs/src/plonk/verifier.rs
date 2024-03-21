@@ -1,82 +1,42 @@
 use ff::Field;
-use group::Curve;
 use std::iter;
+use std::marker::PhantomData;
 
+use super::config::GenericConfig;
 use super::{
     vanishing, ChallengeBeta, ChallengeGamma, ChallengeTheta, ChallengeX, ChallengeY, Error,
     VerifyingKey,
 };
-use crate::arithmetic::CurveAffine;
 use crate::poly::{
-    commitment::{Blind, Guard, Params, MSM},
+    commitment::{Blind, Params},
     multiopen::{self, VerifierQuery},
 };
-use crate::transcript::{read_n_points, read_n_scalars, EncodedChallenge, TranscriptRead};
-
-#[cfg(feature = "batch")]
-mod batch;
-#[cfg(feature = "batch")]
-pub use batch::BatchVerifier;
-
-/// Trait representing a strategy for verifying Halo 2 proofs.
-pub trait VerificationStrategy<'params, C: CurveAffine> {
-    /// The output type of this verification strategy after processing a proof.
-    type Output;
-
-    /// Obtains an MSM from the verifier strategy and yields back the strategy's
-    /// output.
-    fn process<E: EncodedChallenge<C>>(
-        self,
-        f: impl FnOnce(MSM<'params, C>) -> Result<Guard<'params, C, E>, Error>,
-    ) -> Result<Self::Output, Error>;
-}
+use crate::transcript::{read_n_commitments, read_n_scalars, EncodedChallenge, TranscriptRead};
 
 /// A verifier that checks a single proof at a time.
 #[derive(Debug)]
-pub struct SingleVerifier<'params, C: CurveAffine> {
-    msm: MSM<'params, C>,
+pub struct SingleVerifier<'params, C: GenericConfig> {
+    // commitment: &'params C::Commitment,
+    _marker: PhantomData<&'params C::Commitment>,
 }
 
-impl<'params, C: CurveAffine> SingleVerifier<'params, C> {
+impl<'params, C: GenericConfig> SingleVerifier<'params, C> {
     /// Constructs a new single proof verifier.
     pub fn new(params: &'params Params<C>) -> Self {
         SingleVerifier {
-            msm: MSM::new(params),
-        }
-    }
-}
-
-impl<'params, C: CurveAffine> VerificationStrategy<'params, C> for SingleVerifier<'params, C> {
-    type Output = ();
-
-    fn process<E: EncodedChallenge<C>>(
-        self,
-        f: impl FnOnce(MSM<'params, C>) -> Result<Guard<'params, C, E>, Error>,
-    ) -> Result<Self::Output, Error> {
-        let guard = f(self.msm)?;
-        let msm = guard.use_challenges();
-        if msm.eval() {
-            Ok(())
-        } else {
-            Err(Error::ConstraintSystemFailure)
+            _marker: PhantomData,
         }
     }
 }
 
 /// Returns a boolean indicating whether or not the proof is valid
-pub fn verify_proof<
-    'params,
-    C: CurveAffine,
-    E: EncodedChallenge<C>,
-    T: TranscriptRead<C, E>,
-    V: VerificationStrategy<'params, C>,
->(
+pub fn verify_proof<'params, C: GenericConfig, E: EncodedChallenge<C>, T: TranscriptRead<C, E>>(
     params: &'params Params<C>,
     vk: &VerifyingKey<C>,
-    strategy: V,
+    strategy: SingleVerifier<'params, C>,
     instances: &[&[&[C::Scalar]]],
     transcript: &mut T,
-) -> Result<V::Output, Error> {
+) -> Result<(), Error> {
     // Check that instances matches the expected number of instance columns
     for instances in instances.iter() {
         if instances.len() != vk.cs.num_instance_columns {
@@ -97,7 +57,7 @@ pub fn verify_proof<
                     poly.resize(params.n as usize, C::Scalar::ZERO);
                     let poly = vk.domain.lagrange_from_vec(poly);
 
-                    Ok(params.commit_lagrange(&poly, Blind::default()).to_affine())
+                    Ok(params.commit_lagrange(&poly, Blind::default()))
                 })
                 .collect::<Result<Vec<_>, _>>()
         })
@@ -111,14 +71,14 @@ pub fn verify_proof<
     for instance_commitments in instance_commitments.iter() {
         // Hash the instance (external) commitments into the transcript
         for commitment in instance_commitments {
-            transcript.common_point(*commitment)?
+            transcript.common_commitment(*commitment)?
         }
     }
 
     let advice_commitments = (0..num_proofs)
         .map(|_| -> Result<Vec<_>, _> {
             // Hash the prover's advice commitments into the transcript
-            read_n_points(transcript, vk.cs.num_advice_columns)
+            read_n_commitments(transcript, vk.cs.num_advice_columns)
         })
         .collect::<Result<Vec<_>, _>>()?;
 
@@ -341,7 +301,5 @@ pub fn verify_proof<
 
     // We are now convinced the circuit is satisfied so long as the
     // polynomial commitments open to the correct values.
-    strategy.process(|msm| {
-        multiopen::verify_proof(params, transcript, queries, msm).map_err(|_| Error::Opening)
-    })
+    multiopen::verify_proof(params, transcript, queries).map_err(|_| Error::Opening)
 }

@@ -8,7 +8,6 @@
 use blake2b_simd::Params as Blake2bParams;
 use group::ff::{Field, FromUniformBytes, PrimeField};
 
-use crate::arithmetic::CurveAffine;
 use crate::poly::{
     Coeff, EvaluationDomain, ExtendedLagrangeCoeff, LagrangeCoeff, PinnedEvaluationDomain,
     Polynomial,
@@ -17,6 +16,7 @@ use crate::transcript::{ChallengeScalar, EncodedChallenge, Transcript};
 
 mod assigned;
 mod circuit;
+pub(crate) mod config;
 mod error;
 mod keygen;
 mod lookup;
@@ -28,6 +28,7 @@ mod verifier;
 
 pub use assigned::*;
 pub use circuit::*;
+pub use config::*;
 pub use error::*;
 pub use keygen::*;
 pub use prover::*;
@@ -38,9 +39,9 @@ use std::io;
 /// This is a verifying key which allows for the verification of proofs for a
 /// particular circuit.
 #[derive(Clone, Debug)]
-pub struct VerifyingKey<C: CurveAffine> {
+pub struct VerifyingKey<C: GenericConfig> {
     domain: EvaluationDomain<C::Scalar>,
-    fixed_commitments: Vec<C>,
+    fixed_commitments: Vec<C::Commitment>,
     permutation: permutation::VerifyingKey<C>,
     cs: ConstraintSystem<C::Scalar>,
     /// Cached maximum degree of `cs` (which doesn't change after construction).
@@ -49,13 +50,13 @@ pub struct VerifyingKey<C: CurveAffine> {
     transcript_repr: C::Scalar,
 }
 
-impl<C: CurveAffine> VerifyingKey<C>
+impl<C: GenericConfig> VerifyingKey<C>
 where
     C::Scalar: FromUniformBytes<64>,
 {
     fn from_parts(
         domain: EvaluationDomain<C::Scalar>,
-        fixed_commitments: Vec<C>,
+        fixed_commitments: Vec<C::Commitment>,
         permutation: permutation::VerifyingKey<C>,
         cs: ConstraintSystem<C::Scalar>,
     ) -> Self {
@@ -89,7 +90,7 @@ where
     }
 }
 
-impl<C: CurveAffine> VerifyingKey<C> {
+impl<C: GenericConfig> VerifyingKey<C> {
     /// Hashes a verification key into a transcript.
     pub fn hash_into<E: EncodedChallenge<C>, T: Transcript<C, E>>(
         &self,
@@ -104,7 +105,6 @@ impl<C: CurveAffine> VerifyingKey<C> {
     /// the minimal information necessary to reconstruct the verification key.
     pub fn pinned(&self) -> PinnedVerificationKey<'_, C> {
         PinnedVerificationKey {
-            base_modulus: C::Base::MODULUS,
             scalar_modulus: C::Scalar::MODULUS,
             domain: self.domain.pinned(),
             fixed_commitments: &self.fixed_commitments,
@@ -118,18 +118,17 @@ impl<C: CurveAffine> VerifyingKey<C> {
 /// its active contents.
 #[allow(dead_code)]
 #[derive(Debug)]
-pub struct PinnedVerificationKey<'a, C: CurveAffine> {
-    base_modulus: &'static str,
+pub struct PinnedVerificationKey<'a, C: GenericConfig> {
     scalar_modulus: &'static str,
     domain: PinnedEvaluationDomain<'a, C::Scalar>,
     cs: PinnedConstraintSystem<'a, C::Scalar>,
-    fixed_commitments: &'a Vec<C>,
+    fixed_commitments: &'a Vec<C::Commitment>,
     permutation: &'a permutation::VerifyingKey<C>,
 }
 /// This is a proving key which allows for the creation of proofs for a
 /// particular circuit.
 #[derive(Clone, Debug)]
-pub struct ProvingKey<C: CurveAffine> {
+pub struct ProvingKey<C: GenericConfig> {
     vk: VerifyingKey<C>,
     l0: Polynomial<C::Scalar, ExtendedLagrangeCoeff>,
     l_blind: Polynomial<C::Scalar, ExtendedLagrangeCoeff>,
@@ -140,14 +139,14 @@ pub struct ProvingKey<C: CurveAffine> {
     permutation: permutation::ProvingKey<C>,
 }
 
-impl<C: CurveAffine> ProvingKey<C> {
+impl<C: GenericConfig> ProvingKey<C> {
     /// Get the underlying [`VerifyingKey`].
     pub fn get_vk(&self) -> &VerifyingKey<C> {
         &self.vk
     }
 }
 
-impl<C: CurveAffine> VerifyingKey<C> {
+impl<C: GenericConfig> VerifyingKey<C> {
     /// Get the underlying [`EvaluationDomain`].
     pub fn get_domain(&self) -> &EvaluationDomain<C::Scalar> {
         &self.domain

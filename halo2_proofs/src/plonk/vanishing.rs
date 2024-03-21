@@ -1,11 +1,11 @@
 use std::marker::PhantomData;
 
-use crate::arithmetic::CurveAffine;
+use crate::plonk::config::GenericConfig;
 
 mod prover;
 mod verifier;
 
 /// A vanishing argument.
-pub(crate) struct Argument<C: CurveAffine> {
+pub(crate) struct Argument<C: GenericConfig> {
     _marker: PhantomData<C>,
 }

@@ -11,6 +11,8 @@
 pub mod arithmetic;
 pub mod circuit;
 pub use pasta_curves as pasta;
+pub mod fields;
+pub mod hash;
 mod multicore;
 pub mod plonk;
 pub mod poly;

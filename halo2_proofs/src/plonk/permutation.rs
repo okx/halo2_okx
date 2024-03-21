@@ -1,8 +1,6 @@
 use super::circuit::{Any, Column};
-use crate::{
-    arithmetic::CurveAffine,
-    poly::{Coeff, ExtendedLagrangeCoeff, LagrangeCoeff, Polynomial},
-};
+use super::config::GenericConfig;
+use crate::poly::{Coeff, ExtendedLagrangeCoeff, LagrangeCoeff, Polynomial};
 
 pub(crate) mod keygen;
 pub(crate) mod prover;
@@ -71,13 +69,13 @@ impl Argument {
 
 /// The verifying key for a single permutation argument.
 #[derive(Clone, Debug)]
-pub(crate) struct VerifyingKey<C: CurveAffine> {
-    commitments: Vec<C>,
+pub(crate) struct VerifyingKey<C: GenericConfig> {
+    commitments: Vec<C::Commitment>,
 }
 
 /// The proving key for a single permutation argument.
 #[derive(Clone, Debug)]
-pub(crate) struct ProvingKey<C: CurveAffine> {
+pub(crate) struct ProvingKey<C: GenericConfig> {
     permutations: Vec<Polynomial<C::Scalar, LagrangeCoeff>>,
     polys: Vec<Polynomial<C::Scalar, Coeff>>,
     pub(super) cosets: Vec<Polynomial<C::Scalar, ExtendedLagrangeCoeff>>,

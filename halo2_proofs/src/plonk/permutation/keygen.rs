@@ -1,11 +1,7 @@
-use group::{
-    ff::{Field, PrimeField},
-    Curve,
-};
+use group::ff::{Field, PrimeField};
 
-use super::{Argument, ProvingKey, VerifyingKey};
+use super::{Argument, GenericConfig, ProvingKey, VerifyingKey};
 use crate::{
-    arithmetic::CurveAffine,
     plonk::{Any, Column, Error},
     poly::{
         commitment::{Blind, Params},
@@ -99,7 +95,7 @@ impl Assembly {
         Ok(())
     }
 
-    pub(crate) fn build_vk<C: CurveAffine>(
+    pub(crate) fn build_vk<C: GenericConfig>(
         self,
         params: &Params<C>,
         domain: &EvaluationDomain<C::Scalar>,
@@ -143,16 +139,12 @@ impl Assembly {
             }
 
             // Compute commitment to permutation polynomial
-            commitments.push(
-                params
-                    .commit_lagrange(&permutation_poly, Blind::default())
-                    .to_affine(),
-            );
+            commitments.push(params.commit_lagrange(&permutation_poly, Blind::default()));
         }
         VerifyingKey { commitments }
     }
 
-    pub(crate) fn build_pk<C: CurveAffine>(
+    pub(crate) fn build_pk<C: GenericConfig>(
         self,
         params: &Params<C>,
         domain: &EvaluationDomain<C::Scalar>,

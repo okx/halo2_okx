@@ -6,7 +6,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use super::*;
-use crate::{arithmetic::CurveAffine, transcript::ChallengeScalar};
+use crate::plonk::config::GenericConfig;
+use crate::transcript::ChallengeScalar;
 
 mod prover;
 mod verifier;
@@ -37,7 +38,7 @@ type ChallengeX4<F> = ChallengeScalar<F, X4>;
 
 /// A polynomial query at a point
 #[derive(Debug, Clone)]
-pub struct ProverQuery<'a, C: CurveAffine> {
+pub struct ProverQuery<'a, C: GenericConfig> {
     /// point at which polynomial is queried
     pub point: C::Scalar,
     /// coefficients of polynomial
@@ -48,53 +49,44 @@ pub struct ProverQuery<'a, C: CurveAffine> {
 
 /// A polynomial query at a point
 #[derive(Debug, Clone)]
-pub struct VerifierQuery<'r, 'params: 'r, C: CurveAffine> {
+pub struct VerifierQuery<'r, C: GenericConfig> {
     /// point at which polynomial is queried
     point: C::Scalar,
     /// commitment to polynomial
-    commitment: CommitmentReference<'r, 'params, C>,
+    commitment: CommitmentReference<'r, C>,
     /// evaluation of polynomial at query point
     eval: C::Scalar,
 }
 
-impl<'r, 'params: 'r, C: CurveAffine> VerifierQuery<'r, 'params, C> {
+impl<'r, C: GenericConfig> VerifierQuery<'r, C> {
     /// Create a new verifier query based on a commitment
-    pub fn new_commitment(commitment: &'r C, point: C::Scalar, eval: C::Scalar) -> Self {
-        VerifierQuery {
-            point,
-            eval,
-            commitment: CommitmentReference::Commitment(commitment),
-        }
-    }
-
-    /// Create a new verifier query based on a linear combination of commitments
-    pub fn new_msm(
-        msm: &'r commitment::MSM<'params, C>,
+    pub fn new_commitment(
+        commitment: &'r C::Commitment,
         point: C::Scalar,
         eval: C::Scalar,
     ) -> Self {
         VerifierQuery {
             point,
             eval,
-            commitment: CommitmentReference::MSM(msm),
+            commitment: CommitmentReference::Commitment(commitment),
         }
     }
 }
 
 #[allow(clippy::upper_case_acronyms)]
 #[derive(Copy, Clone, Debug)]
-enum CommitmentReference<'r, 'params: 'r, C: CurveAffine> {
-    Commitment(&'r C),
-    MSM(&'r commitment::MSM<'params, C>),
+enum CommitmentReference<'r, C: GenericConfig> {
+    Commitment(&'r C::Commitment),
+    // MSM(&'r commitment::MSM<'params, C>),
 }
 
-impl<'r, 'params: 'r, C: CurveAffine> PartialEq for CommitmentReference<'r, 'params, C> {
+impl<'r, C: GenericConfig> PartialEq for CommitmentReference<'r, C> {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
             (&CommitmentReference::Commitment(a), &CommitmentReference::Commitment(b)) => {
                 std::ptr::eq(a, b)
             }
-            (&CommitmentReference::MSM(a), &CommitmentReference::MSM(b)) => std::ptr::eq(a, b),
+            // (&CommitmentReference::MSM(a), &CommitmentReference::MSM(b)) => std::ptr::eq(a, b),
             _ => false,
         }
     }
