@@ -5,7 +5,7 @@ use crate::plonk::{
 };
 use crate::plonk::plonky2::{
     permutation,
-    GenericConfig2,
+    GenericConfig,
     vanishing,
     // lookup
 };
@@ -39,10 +39,10 @@ use plonky2::plonk::config::Hasher;
 /// generated previously for the same circuit. The provided `instances`
 /// are zero-padded internally.
 pub fn create_plonky2_proof<
-    G: GenericConfig2,
+    G: GenericConfig,
     const D: usize,
     R: RngCore,
-    ConcreteCircuit: Circuit<G::F>,
+    ConcreteCircuit: Circuit<G::Scalar>,
 >(
     pk: &ProvingKey<G>,
     circuits: &[ConcreteCircuit],
@@ -59,7 +59,6 @@ pub fn create_plonky2_proof<
             return Err(Error::InvalidInstances);
         }
     }
-    // let mut challenger = Challenger::<G::F, G::Hasher>::new();
 
     // Hash verification key into transcript
     challenger.observe_hash::<G::Hasher>(pk.vk.transcript_repr);
@@ -72,7 +71,7 @@ pub fn create_plonky2_proof<
     // // from the verification key.
     let meta = &pk.vk.cs;
 
-    struct InstanceSingle<G: GenericConfig2> {
+    struct InstanceSingle<C: GenericConfig> {
         pub instance_values: Vec<Polynomial<G::F, LagrangeCoeff>>,
         pub instance_polys: Vec<Polynomial<G::F, Coeff>>,
         pub instance_cosets: Vec<Polynomial<G::F, ExtendedLagrangeCoeff>>,
@@ -707,7 +706,7 @@ pub fn create_plonky2_proof<
 fn test_create_plonky2_proof() {
     use crate::{
         circuit::SimpleFloorPlanner,
-        plonk::plonky2::{keygen_pk, keygen_vk},
+        plonk::plonky2::{keygen_pk, keygen_vk, Params, FriConfig, VerifyingKey, GenericConfig2, PoseidonGoldilocksConfig},
         // transcript::{Blake2bWrite, Challenge255},
     };
     use field::goldilocks_field::GoldilocksField;
@@ -736,19 +735,22 @@ fn test_create_plonky2_proof() {
         }
     }
 
-    // let vk = keygen_vk(&params, &MyCircuit).expect("keygen_vk should not fail");
-    // let pk = keygen_pk(&params, vk, &MyCircuit).expect("keygen_pk should not fail");
-    let mut challenger = Challenger::new();
+    let params = Params {
+        k: 22,
+        n: 1,
+        fri_config: FriConfig {
+            rate_bits: 3,
+            cap_height: 4,
+            proof_of_work_bits: 16,
+            num_query_rounds: 28,
+        }
+    };
 
-    // Create proof with wrong number of instances
-    let proof = create_plonky2_proof(
-        &pk,
-        &[MyCircuit, MyCircuit],
-        &[],
-        OsRng,
-        &mut transcript,
-    );
-    assert!(matches!(proof.unwrap_err(), Error::InvalidInstances));
+    type C = PoseidonGoldilocksConfig;
+
+    let vk: VerifyingKey<C>  = keygen_vk(&params, &MyCircuit).expect("keygen_vk should not fail");
+    let pk = keygen_pk(&params, vk, &MyCircuit).expect("keygen_pk should not fail");
+    let mut challenger = Challenger::new();
 
     // Create proof with correct number of instances
     create_plonky2_proof(

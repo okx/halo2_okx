@@ -14,6 +14,20 @@ use crate::poly::{
 
 use crate::plonk::plonky2::GenericConfig2;
 
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct FriConfig {
+    /// `rate = 2^{-rate_bits}`.
+    pub rate_bits: usize,
+
+    /// Height of Merkle tree caps.
+    pub cap_height: usize,
+
+    pub proof_of_work_bits: u32,
+
+    /// Number of query rounds to perform.
+    pub num_query_rounds: usize,
+}
+
 
 
 /// A polynomial query at a point

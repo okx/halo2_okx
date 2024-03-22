@@ -3,7 +3,9 @@
 use std::ops::Range;
 
 use ff::{Field, FromUniformBytes};
-use group::Curve;
+use plonky2::plonk::config::{Hasher, AlgebraicHasher};
+use crate::plonk::plonky2::{GenericConfig2, VerifyingKey, ProvingKey, Params};
+use crate::plonk::plonky2::permutation;
 
 use super::super::{
     circuit::{
@@ -16,21 +18,21 @@ use crate::{
     circuit::Value,
     poly::{
         batch_invert_assigned,
-        commitment::{Blind, Params},
+        commitment::{Blind},
         EvaluationDomain,
     },
 };
 
-pub(crate) fn create_domain<C, ConcreteCircuit>(
-    params: &Params<C>,
+pub(crate) fn create_domain<G, ConcreteCircuit>(
+    params: &Params,
 ) -> (
-    EvaluationDomain<C::Scalar>,
-    ConstraintSystem<C::Scalar>,
+    EvaluationDomain<G::F>,
+    ConstraintSystem<G::F>,
     ConcreteCircuit::Config,
 )
 where
-    C: CurveAffine,
-    ConcreteCircuit: Circuit<C::Scalar>,
+    G: GenericConfig2,
+    ConcreteCircuit: Circuit<G::F>,
 {
     let mut cs = ConstraintSystem::default();
     let config = ConcreteCircuit::configure(&mut cs);
@@ -185,26 +187,27 @@ impl<F: Field> Assignment<F> for Assembly<F> {
 }
 
 /// Generate a `VerifyingKey` from an instance of `Circuit`.
-pub fn keygen_vk<C, ConcreteCircuit>(
+pub fn keygen_vk<G, ConcreteCircuit>(
+    params: &Params,
     circuit: &ConcreteCircuit,
-) -> Result<VerifyingKey<C>, Error>
+) -> Result<VerifyingKey<G>, Error>
 where
     G: GenericConfig2,
     G::F: FromUniformBytes<64>,
     ConcreteCircuit: Circuit<G::F>,
 {
-    let (domain, cs, config) = create_domain::<C, ConcreteCircuit>(params);
+    let (domain, cs, config) = create_domain::<G, ConcreteCircuit>(params);
 
-    if (params.n as usize) < cs.minimum_rows() {
-        return Err(Error::not_enough_rows_available(params.k));
+    if (domain.n as usize) < cs.minimum_rows() {
+        return Err(Error::not_enough_rows_available(domain.k));
     }
 
-    let mut assembly: Assembly<C::Scalar> = Assembly {
-        k: params.k,
+    let mut assembly: Assembly<G::F> = Assembly {
+        k: domain.k,
         fixed: vec![domain.empty_lagrange_assigned(); cs.num_fixed_columns],
-        permutation: permutation::keygen::Assembly::new(params.n as usize, &cs.permutation),
-        selectors: vec![vec![false; params.n as usize]; cs.num_selectors],
-        usable_rows: 0..params.n as usize - (cs.blinding_factors() + 1),
+        permutation: permutation::keygen::Assembly::new(domain.n as usize, &cs.permutation),
+        selectors: vec![vec![false; domain.n as usize]; cs.num_selectors],
+        usable_rows: 0..domain.n as usize - (cs.blinding_factors() + 1),
         _marker: std::marker::PhantomData,
     };
 
@@ -226,29 +229,32 @@ where
 
     let permutation_vk = assembly
         .permutation
-        .build_vk(params, &domain, &cs.permutation);
+        .build_vk(params, &domain, fixed, &cs.permutation);
 
-    let fixed_commitments = fixed
-        .iter()
-        .map(|poly| params.commit_lagrange(poly, Blind::default()).to_affine())
-        .collect();
+    // TODO(add more info about circuit to transcript_repr)
+    let transcript_repr = G::Hasher::hash_no_pad(&[G::F::ZERO]);
 
-    Ok(VerifyingKey::from_parts(
+    // Compute cached values.
+    let cs_degree = cs.degree();
+
+    Ok(VerifyingKey {
         domain,
-        fixed_commitments,
-        permutation_vk,
-        cs,
-    ))
+        permutation: permutation_vk,
+        transcript_repr,
+        cs_degree,
+        cs
+    })
 }
 
 /// Generate a `ProvingKey` from a `VerifyingKey` and an instance of `Circuit`.
-pub fn keygen_pk<C, ConcreteCircuit>(
-    vk: VerifyingKey<C>,
+pub fn keygen_pk<G, ConcreteCircuit>(
+    params: &Params,
+    vk: VerifyingKey<G>,
     circuit: &ConcreteCircuit,
-) -> Result<ProvingKey<C>, Error>
+) -> Result<ProvingKey<G>, Error>
 where
-    C: CurveAffine,
-    ConcreteCircuit: Circuit<C::Scalar>,
+    G: GenericConfig2,
+    ConcreteCircuit: Circuit<G::F>,
 {
     let mut cs = ConstraintSystem::default();
     let config = ConcreteCircuit::configure(&mut cs);
@@ -259,7 +265,7 @@ where
         return Err(Error::not_enough_rows_available(params.k));
     }
 
-    let mut assembly: Assembly<C::Scalar> = Assembly {
+    let mut assembly: Assembly<G::F> = Assembly {
         k: params.k,
         fixed: vec![vk.domain.empty_lagrange_assigned(); cs.num_fixed_columns],
         permutation: permutation::keygen::Assembly::new(params.n as usize, &cs.permutation),
@@ -301,7 +307,7 @@ where
     // Compute l_0(X)
     // TODO: this can be done more efficiently
     let mut l0 = vk.domain.empty_lagrange();
-    l0[0] = C::Scalar::ONE;
+    l0[0] = G::F::ONE;
     let l0 = vk.domain.lagrange_to_coeff(l0);
     let l0 = vk.domain.coeff_to_extended(l0);
 
@@ -309,7 +315,7 @@ where
     // and 0 otherwise over the domain.
     let mut l_blind = vk.domain.empty_lagrange();
     for evaluation in l_blind[..].iter_mut().rev().take(cs.blinding_factors()) {
-        *evaluation = C::Scalar::ONE;
+        *evaluation = G::F::ONE;
     }
     let l_blind = vk.domain.lagrange_to_coeff(l_blind);
     let l_blind = vk.domain.coeff_to_extended(l_blind);
@@ -317,7 +323,7 @@ where
     // Compute l_last(X) which evaluates to 1 on the first inactive row (just
     // before the blinding factors) and 0 otherwise over the domain
     let mut l_last = vk.domain.empty_lagrange();
-    l_last[params.n as usize - cs.blinding_factors() - 1] = C::Scalar::ONE;
+    l_last[params.n as usize - cs.blinding_factors() - 1] = G::F::ONE;
     let l_last = vk.domain.lagrange_to_coeff(l_last);
     let l_last = vk.domain.coeff_to_extended(l_last);
 
