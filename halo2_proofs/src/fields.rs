@@ -1,5 +1,9 @@
 //! This module contains goldilocks field and its extension
 
+mod goldilocks_field;
+
+pub use goldilocks_field::*;
+
 ///
 pub trait Field64: ff::Field {
     ///

@@ -1,6 +1,8 @@
 use crate::fields::Field64;
 use crate::hash::Hasher;
 
+use super::Commitment;
+
 ///
 #[derive(Debug)]
 pub struct MerkleCap<F: Field64, H: Hasher<F>>(pub Vec<H::Hash>);
@@ -24,3 +26,9 @@ pub struct MerkleTree<F: Field64, H: Hasher<F>> {
     /// The Merkle cap.
     pub cap: MerkleCap<F, H>,
 }
+
+///
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+pub struct MerkleCommitment;
+
+impl<F: Field64, H: Hasher<F>> Commitment<F, H> for MerkleCommitment {}

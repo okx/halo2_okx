@@ -1,12 +1,8 @@
-use crate::fields::Field64;
 use core::fmt::Debug;
 
-use crate::hash::Hasher;
-
-// use crate::poly::merkle_tree::MerkleCap;
-
-///
-pub trait Commitment<F: Field64, H: Hasher<F>>: Debug + Clone + Copy + Sync + Sized {}
+use crate::fields::{Field64, GoldilocksField};
+use crate::hash::{Hasher, PoseidonHash};
+use crate::poly::commitment::{Commitment, MerkleCommitment};
 
 ///
 pub trait GenericConfig: Debug + Clone + Copy + Sync + Sized + Send + Eq + PartialEq {
@@ -18,4 +14,13 @@ pub trait GenericConfig: Debug + Clone + Copy + Sync + Sized + Send + Eq + Parti
 
     /// commitment
     type Commitment: Commitment<Self::Scalar, Self::Hasher>;
+}
+
+/// Configuration using Poseidon over the Goldilocks field.
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+pub struct PoseidonGoldilocksConfig;
+impl GenericConfig for PoseidonGoldilocksConfig {
+    type Scalar = GoldilocksField;
+    type Hasher = PoseidonHash;
+    type Commitment = MerkleCommitment;
 }

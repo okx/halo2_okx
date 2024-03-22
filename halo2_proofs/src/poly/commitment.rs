@@ -4,6 +4,8 @@
 //! [halo]: https://eprint.iacr.org/2019/1021
 
 use super::{Coeff, LagrangeCoeff, Polynomial};
+use crate::fields::Field64;
+use crate::hash::Hasher;
 
 use ff::Field;
 use std::marker::PhantomData;
@@ -14,7 +16,7 @@ mod prover;
 mod verifier;
 
 use crate::plonk::config::GenericConfig;
-pub use merkle_tree::MerkleTree;
+pub use merkle_tree::*;
 pub use prover::create_proof;
 pub use verifier::verify_proof;
 
@@ -280,4 +282,10 @@ fn test_opening_proof() {
     // let (msm_g, _accumulator) = guard.clone().use_g(g);
     // assert!(msm_g.eval());
     // }
+}
+
+///
+pub trait Commitment<F: Field64, H: Hasher<F>>:
+    std::fmt::Debug + Clone + Copy + Sync + Sized
+{
 }

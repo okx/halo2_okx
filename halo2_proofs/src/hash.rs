@@ -4,6 +4,10 @@ use crate::fields::Field64;
 use core::fmt::Debug;
 use ff::Field;
 
+pub mod poseidon;
+
+pub use poseidon::*;
+
 ///
 pub trait GenericHashOut<F: Field>: Copy + Clone + Debug + Eq + PartialEq + Send + Sync {
     ///
