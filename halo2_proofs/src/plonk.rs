@@ -52,7 +52,7 @@ pub struct VerifyingKey<C: GenericConfig> {
 
 impl<C: GenericConfig> VerifyingKey<C>
 where
-    C::Scalar: FromUniformBytes<64>,
+    C::Scalar: FromUniformBytes<8>,
 {
     fn from_parts(
         domain: EvaluationDomain<C::Scalar>,
@@ -84,7 +84,7 @@ where
         hasher.update(s.as_bytes());
 
         // Hash in final Blake2bState
-        vk.transcript_repr = C::Scalar::from_uniform_bytes(hasher.finalize().as_array());
+        // vk.transcript_repr = C::Scalar::from_uniform_bytes(hasher.finalize().as_array());
 
         vk
     }

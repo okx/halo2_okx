@@ -191,7 +191,7 @@ pub fn keygen_vk<C, ConcreteCircuit>(
 ) -> Result<VerifyingKey<C>, Error>
 where
     C: GenericConfig,
-    C::Scalar: FromUniformBytes<64>,
+    C::Scalar: FromUniformBytes<8>,
     ConcreteCircuit: Circuit<C::Scalar>,
 {
     let (domain, cs, config) = create_domain::<C, ConcreteCircuit>(params);

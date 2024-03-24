@@ -83,69 +83,71 @@ impl<R: Read, C: GenericConfig, E: EncodedChallenge<C>> PoseidonRead<R, C, E> {
     }
 }
 
-// impl<R: Read, C: GenericConfig> TranscriptRead<C, Challenge255<C>>
-// for PoseidonRead<R, C, Challenge255<C>>
-// where
-// C::Scalar: FromUniformBytes<8>,
-// {
-// fn read_commitment(&mut self) -> io::Result<C> {
-// let mut compressed = C::Repr::default();
-// self.reader.read_exact(compressed.as_mut())?;
-// let point: C::Commitment = Option::from(C::from_bytes(&compressed)).ok_or_else(|| {
-// io::Error::new(io::ErrorKind::Other, "invalid point encoding in proof")
-// })?;
-// self.common_commitment(point)?;
+impl<R: Read, C: GenericConfig> TranscriptRead<C, Challenge64<C>>
+    for PoseidonRead<R, C, Challenge64<C>>
+where
+    C::Scalar: FromUniformBytes<8>,
+{
+    fn read_commitment(&mut self) -> io::Result<C::Commitment> {
+        // let mut compressed = C::Repr::default();
+        // self.reader.read_exact(compressed.as_mut())?;
+        // let point: C::Commitment = Option::from(C::from_bytes(&compressed)).ok_or_else(|| {
+        // io::Error::new(io::ErrorKind::Other, "invalid point encoding in proof")
+        // })?;
+        // self.common_commitment(point)?;
 
-// Ok(point)
-// }
+        // Ok(point)
+        todo!()
+    }
 
-// fn read_scalar(&mut self) -> io::Result<C::Scalar> {
-// let mut data = <C::Scalar as PrimeField>::Repr::default();
-// self.reader.read_exact(data.as_mut())?;
-// let scalar: C::Scalar = Option::from(C::Scalar::from_repr(data)).ok_or_else(|| {
-// io::Error::new(
-// io::ErrorKind::Other,
-// "invalid field element encoding in proof",
-// )
-// })?;
-// self.common_scalar(scalar)?;
+    fn read_scalar(&mut self) -> io::Result<C::Scalar> {
+        let mut data = <C::Scalar as PrimeField>::Repr::default();
+        self.reader.read_exact(data.as_mut())?;
+        let scalar: C::Scalar = Option::from(C::Scalar::from_repr(data)).ok_or_else(|| {
+            io::Error::new(
+                io::ErrorKind::Other,
+                "invalid field element encoding in proof",
+            )
+        })?;
+        self.common_scalar(scalar)?;
 
-// Ok(scalar)
-// }
-// }
+        Ok(scalar)
+    }
+}
 
-// impl<R: Read, C: CurveAffine> Transcript<C, Challenge255<C>> for Blake2bRead<R, C, Challenge255<C>>
-// where
-// C::Scalar: FromUniformBytes<64>,
-// {
-// fn squeeze_challenge(&mut self) -> Challenge255<C> {
-// self.state.update(&[BLAKE2B_PREFIX_CHALLENGE]);
-// let hasher = self.state.clone();
-// let result: [u8; 64] = hasher.finalize().as_bytes().try_into().unwrap();
-// Challenge255::<C>::new(&result)
-// }
+impl<R: Read, C: GenericConfig> Transcript<C, Challenge64<C>> for PoseidonRead<R, C, Challenge64<C>>
+where
+    C::Scalar: FromUniformBytes<8>,
+{
+    fn squeeze_challenge(&mut self) -> Challenge64<C> {
+        // self.state.update(&[BLAKE2B_PREFIX_CHALLENGE]);
+        // let hasher = self.state.clone();
+        let result: [u8; 8] = Default::default();
+        Challenge64::<C>::new(&result)
+    }
 
-// fn common_point(&mut self, point: C) -> io::Result<()> {
-// self.state.update(&[BLAKE2B_PREFIX_POINT]);
-// let coords: Coordinates<C> = Option::from(point.coordinates()).ok_or_else(|| {
-// io::Error::new(
-// io::ErrorKind::Other,
-// "cannot write points at infinity to the transcript",
-// )
-// })?;
-// self.state.update(coords.x().to_repr().as_ref());
-// self.state.update(coords.y().to_repr().as_ref());
+    fn common_commitment(&mut self, point: C::Commitment) -> io::Result<()> {
+        todo!()
+        // self.state.update(&[BLAKE2B_PREFIX_POINT]);
+        // let coords: Coordinates<C> = Option::from(point.coordinates()).ok_or_else(|| {
+        // io::Error::new(
+        // io::ErrorKind::Other,
+        // "cannot write points at infinity to the transcript",
+        // )
+        // })?;
+        // self.state.update(coords.x().to_repr().as_ref());
+        // self.state.update(coords.y().to_repr().as_ref());
 
-// Ok(())
-// }
+        // Ok(())
+    }
 
-// fn common_scalar(&mut self, scalar: C::Scalar) -> io::Result<()> {
-// self.state.update(&[BLAKE2B_PREFIX_SCALAR]);
-// self.state.update(scalar.to_repr().as_ref());
+    fn common_scalar(&mut self, scalar: C::Scalar) -> io::Result<()> {
+        // self.state.update(&[BLAKE2B_PREFIX_SCALAR]);
+        // self.state.update(scalar.to_repr().as_ref());
 
-// Ok(())
-// }
-// }
+        Ok(())
+    }
+}
 
 /// We will replace BLAKE2b with an algebraic hash function in a later version.
 #[derive(Debug, Clone)]
@@ -175,56 +177,57 @@ impl<W: Write, C: GenericConfig, E: EncodedChallenge<C>> PoseidonWrite<W, C, E> 
     }
 }
 
-// impl<W: Write, C: CurveAffine> TranscriptWrite<C, Challenge255<C>>
-// for Blake2bWrite<W, C, Challenge255<C>>
-// where
-// C::Scalar: FromUniformBytes<64>,
-// {
-// fn write_point(&mut self, point: C) -> io::Result<()> {
-// self.common_point(point)?;
-// let compressed = point.to_bytes();
-// self.writer.write_all(compressed.as_ref())
-// }
-// fn write_scalar(&mut self, scalar: C::Scalar) -> io::Result<()> {
-// self.common_scalar(scalar)?;
-// let data = scalar.to_repr();
-// self.writer.write_all(data.as_ref())
-// }
-// }
+impl<W: Write, C: GenericConfig> TranscriptWrite<C, Challenge64<C>>
+    for PoseidonWrite<W, C, Challenge64<C>>
+where
+    C::Scalar: FromUniformBytes<8>,
+{
+    fn write_commitment(&mut self, point: C::Commitment) -> io::Result<()> {
+        Ok(())
+        // self.common_commitment(point)?;
+        // let compressed = point.to_bytes();
+        // self.writer.write_all(compressed.as_ref())
+    }
+    fn write_scalar(&mut self, scalar: C::Scalar) -> io::Result<()> {
+        self.common_scalar(scalar)?;
+        let data = scalar.to_repr();
+        self.writer.write_all(data.as_ref())
+    }
+}
 
-// impl<W: Write, C: CurveAffine> Transcript<C, Challenge255<C>>
-// for Blake2bWrite<W, C, Challenge255<C>>
-// where
-// C::Scalar: FromUniformBytes<64>,
-// {
-// fn squeeze_challenge(&mut self) -> Challenge255<C> {
-// self.state.update(&[BLAKE2B_PREFIX_CHALLENGE]);
-// let hasher = self.state.clone();
-// let result: [u8; 64] = hasher.finalize().as_bytes().try_into().unwrap();
-// Challenge255::<C>::new(&result)
-// }
+impl<W: Write, C: GenericConfig> Transcript<C, Challenge64<C>>
+    for PoseidonWrite<W, C, Challenge64<C>>
+where
+    C::Scalar: FromUniformBytes<8>,
+{
+    fn squeeze_challenge(&mut self) -> Challenge64<C> {
+        // self.state.update(&[BLAKE2B_PREFIX_CHALLENGE]);
+        // let hasher = self.state.clone();
+        let result: [u8; 8] = Default::default();
+        Challenge64::<C>::new(&result)
+    }
 
-// fn common_point(&mut self, point: C) -> io::Result<()> {
-// self.state.update(&[BLAKE2B_PREFIX_POINT]);
-// let coords: Coordinates<C> = Option::from(point.coordinates()).ok_or_else(|| {
-// io::Error::new(
-// io::ErrorKind::Other,
-// "cannot write points at infinity to the transcript",
-// )
-// })?;
-// self.state.update(coords.x().to_repr().as_ref());
-// self.state.update(coords.y().to_repr().as_ref());
+    fn common_commitment(&mut self, point: C::Commitment) -> io::Result<()> {
+        // self.state.update(&[BLAKE2B_PREFIX_POINT]);
+        // let coords: Coordinates<C> = Option::from(point.coordinates()).ok_or_else(|| {
+        // io::Error::new(
+        // io::ErrorKind::Other,
+        // "cannot write points at infinity to the transcript",
+        // )
+        // })?;
+        // self.state.update(coords.x().to_repr().as_ref());
+        // self.state.update(coords.y().to_repr().as_ref());
 
-// Ok(())
-// }
+        Ok(())
+    }
 
-// fn common_scalar(&mut self, scalar: C::Scalar) -> io::Result<()> {
-// self.state.update(&[BLAKE2B_PREFIX_SCALAR]);
-// self.state.update(scalar.to_repr().as_ref());
+    fn common_scalar(&mut self, scalar: C::Scalar) -> io::Result<()> {
+        // self.state.update(&[BLAKE2B_PREFIX_SCALAR]);
+        // self.state.update(scalar.to_repr().as_ref());
 
-// Ok(())
-// }
-// }
+        Ok(())
+    }
+}
 
 /// The scalar representation of a verifier challenge.
 ///
@@ -270,24 +273,24 @@ pub trait EncodedChallenge<C: GenericConfig> {
 
 /// A 255-bit challenge.
 #[derive(Copy, Clone, Debug)]
-pub struct Challenge255<C: GenericConfig>([u8; 32], PhantomData<C>);
+pub struct Challenge64<C: GenericConfig>([u8; 8], PhantomData<C>);
 
-impl<C: GenericConfig> std::ops::Deref for Challenge255<C> {
-    type Target = [u8; 32];
+impl<C: GenericConfig> std::ops::Deref for Challenge64<C> {
+    type Target = [u8; 8];
 
     fn deref(&self) -> &Self::Target {
         &self.0
     }
 }
 
-impl<C: GenericConfig> EncodedChallenge<C> for Challenge255<C>
+impl<C: GenericConfig> EncodedChallenge<C> for Challenge64<C>
 where
-    C::Scalar: FromUniformBytes<64>,
+    C::Scalar: FromUniformBytes<8>,
 {
-    type Input = [u8; 64];
+    type Input = [u8; 8];
 
-    fn new(challenge_input: &[u8; 64]) -> Self {
-        Challenge255(
+    fn new(challenge_input: &[u8; 8]) -> Self {
+        Challenge64(
             C::Scalar::from_uniform_bytes(challenge_input)
                 .to_repr()
                 .as_ref()
