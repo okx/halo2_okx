@@ -4,6 +4,7 @@ use crate::fields::Field64;
 use core::fmt::Debug;
 use ff::Field;
 
+///
 pub mod poseidon;
 
 pub use poseidon::*;
@@ -34,6 +35,9 @@ pub trait PlonkyPermutation<T: Copy + Default>:
 
     ///
     fn set_from_slice(&mut self, elts: &[T], start_idx: usize);
+
+    ///
+    fn set_from_iter<I: IntoIterator<Item = T>>(&mut self, elts: I, start_idx: usize);
 
     ///
     fn permute(&mut self);
@@ -80,4 +84,7 @@ pub trait Hasher<F: Field64>: Sized + Copy + Debug + Eq + PartialEq {
             Self::hash_no_pad(inputs)
         }
     }
+
+    ///
+    fn two_to_one(left: Self::Hash, right: Self::Hash) -> Self::Hash;
 }
