@@ -166,19 +166,20 @@ fn test_commit_lagrange_epaffine() {
 
     use rand_core::OsRng;
 
-    use crate::pasta::{EpAffine, Fq};
-    let params = Params::<EpAffine>::new(K);
+    use crate::fields::GoldilocksField;
+    use crate::plonk::PoseidonGoldilocksConfig;
+    let params = Params::<PoseidonGoldilocksConfig>::new(K);
     let domain = super::EvaluationDomain::new(1, K);
 
     let mut a = domain.empty_lagrange();
 
     for (i, a) in a.iter_mut().enumerate() {
-        *a = Fq::from(i as u64);
+        *a = GoldilocksField::from(i as u64);
     }
 
     let b = domain.lagrange_to_coeff(a.clone());
 
-    let alpha = Blind(Fq::random(OsRng));
+    let alpha = Blind(GoldilocksField::random(OsRng));
 
     assert_eq!(params.commit(&b, alpha), params.commit_lagrange(&a, alpha));
 }
@@ -189,19 +190,20 @@ fn test_commit_lagrange_eqaffine() {
 
     use rand_core::OsRng;
 
-    use crate::pasta::{EqAffine, Fp};
-    let params = Params::<EqAffine>::new(K);
+    use crate::fields::GoldilocksField;
+    use crate::plonk::PoseidonGoldilocksConfig;
+    let params = Params::<PoseidonGoldilocksConfig>::new(K);
     let domain = super::EvaluationDomain::new(1, K);
 
     let mut a = domain.empty_lagrange();
 
     for (i, a) in a.iter_mut().enumerate() {
-        *a = Fp::from(i as u64);
+        *a = GoldilocksField::from(i as u64);
     }
 
     let b = domain.lagrange_to_coeff(a.clone());
 
-    let alpha = Blind(Fp::random(OsRng));
+    let alpha = Blind(GoldilocksField::random(OsRng));
 
     assert_eq!(params.commit(&b, alpha), params.commit_lagrange(&a, alpha));
 }
@@ -276,12 +278,6 @@ fn test_opening_proof() {
     // // Test use_challenges()
     // let msm_challenges = guard.clone().use_challenges();
     // assert!(msm_challenges.eval());
-
-    // // Test use_g()
-    // let g = guard.compute_g();
-    // let (msm_g, _accumulator) = guard.clone().use_g(g);
-    // assert!(msm_g.eval());
-    // }
 }
 
 ///

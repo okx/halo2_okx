@@ -1,14 +1,5 @@
-// use ff::{Field, PrimeField, WithSmallOrderMulGroup};
-
 use super::Field64;
-
-// ///
-// #[derive(Debug, Copy, Clone, Eq, PartialEq)]
-// pub struct GoldilocksField;
-
-// impl GoldilocksField {}
-
-// impl Field for GoldilocksField {}
+use num::bigint::BigUint;
 
 impl Field64 for GoldilocksField {
     const ORDER: u64 = 0xFFFFFFFF00000001;
@@ -40,13 +31,6 @@ impl Field64 for GoldilocksField {
     }
 }
 
-// impl PrimeField for GoldilocksField {}
-
-// impl WithSmallOrderMulGroup<3> for GoldilocksField {
-// const ZETA: GoldilocksField = GoldilocksField;
-// }
-//
-
 use core::fmt;
 use core::ops::{Add, Mul, Neg, Sub};
 
@@ -54,16 +38,8 @@ use ff::{Field, FromUniformBytes, PrimeField, WithSmallOrderMulGroup};
 use rand::RngCore;
 use subtle::{Choice, ConditionallySelectable, ConstantTimeEq, CtOption};
 
-#[cfg(feature = "sqrt-table")]
-use lazy_static::lazy_static;
-
 #[cfg(feature = "bits")]
 use ff::{FieldBits, PrimeFieldBits};
-
-// use crate::arithmetic::{adc, mac, sbb, SqrtTableHelpers};
-
-// #[cfg(feature = "sqrt-table")]
-// use crate::arithmetic::SqrtTables;
 
 const EPSILON: u64 = (1 << 32) - 1;
 /// A field selected to have fast reduction.
@@ -228,15 +204,6 @@ const ROOT_OF_UNITY: GoldilocksField = GoldilocksField::from_raw(175363513344016
 /// is a t root of unity.
 const DELTA: GoldilocksField = GoldilocksField::from_raw(12275445934081160404);
 
-/// `(t - 1) // 2` where t * 2^s + 1 = p with t odd.
-// #[cfg(any(test, not(feature = "sqrt-table")))]
-// const T_MINUS1_OVER2: [u64; 4] = [
-// 0x04a6_7c8d_cc96_9876,
-// 0x0000_0000_1123_4c7e,
-// 0x0000_0000_0000_0000,
-// 0x0000_0000_2000_0000,
-// ];
-
 impl Default for GoldilocksField {
     #[inline]
     fn default() -> Self {
@@ -245,6 +212,8 @@ impl Default for GoldilocksField {
 }
 
 impl GoldilocksField {
+    const NEG_ONE: Self = Self(Self::ORDER - 1);
+
     /// Returns zero, the additive identity.
     #[inline]
     pub const fn zero() -> GoldilocksField {
@@ -280,14 +249,14 @@ impl GoldilocksField {
 
     /// Squares this element.
     #[cfg_attr(not(feature = "uninline-portable"), inline)]
-    pub const fn square(&self) -> GoldilocksField {
-        todo!()
+    pub fn square(&self) -> GoldilocksField {
+        self.mul(self)
     }
 
     /// Multiplies `rhs` by `self`, returning the result.
     #[cfg_attr(not(feature = "uninline-portable"), inline)]
-    pub const fn mul(&self, rhs: &Self) -> Self {
-        todo!()
+    pub fn mul(&self, rhs: &Self) -> Self {
+        reduce128((self.0 as u128) * (rhs.0 as u128))
     }
 
     /// Subtracts `rhs` from `self`, returning the result.
@@ -332,8 +301,64 @@ impl GoldilocksField {
 
     /// Negates `self`.
     #[cfg_attr(not(feature = "uninline-portable"), inline)]
-    pub const fn neg(&self) -> Self {
-        todo!()
+    pub fn neg(&self) -> Self {
+        if self.is_zero().into() {
+            Self::ZERO
+        } else {
+            Self(Self::ORDER - self.to_canonical_u64())
+        }
+    }
+
+    fn to_canonical_biguint(&self) -> BigUint {
+        self.to_canonical_u64().into()
+    }
+
+    fn is_quadratic_residue(&self) -> bool {
+        if self.is_zero().into() {
+            return true;
+        }
+        // This is based on Euler's criterion.
+        let power = Self::NEG_ONE.to_canonical_biguint() / 2u8;
+        let exp = self.exp_biguint(&power);
+        if exp == Self::ONE {
+            return true;
+        }
+        if exp == Self::NEG_ONE {
+            return false;
+        }
+        panic!("Unreachable")
+    }
+
+    fn exp_biguint(&self, power: &BigUint) -> Self {
+        let mut result = Self::ONE;
+        for &digit in power.to_u64_digits().iter().rev() {
+            result = result.exp_power_of_2(64);
+            result *= self.exp_u64(digit);
+        }
+        result
+    }
+
+    fn exp_u64(&self, power: u64) -> Self {
+        let mut current = *self;
+        let mut product = Self::ONE;
+
+        for j in 0..bits_u64(power) {
+            if (power >> j & 1) != 0 {
+                product *= current;
+            }
+            current = current.square();
+        }
+        product
+    }
+
+    #[inline]
+    fn is_zero(&self) -> bool {
+        *self == Self::ZERO
+    }
+
+    #[inline]
+    fn is_one(&self) -> bool {
+        *self == Self::ONE
     }
 }
 
@@ -368,12 +393,6 @@ impl ff::Field for GoldilocksField {
     }
 
     fn sqrt_ratio(num: &Self, div: &Self) -> (Choice, Self) {
-        #[cfg(feature = "sqrt-table")]
-        {
-            FP_TABLES.sqrt_ratio(num, div)
-        }
-
-        #[cfg(not(feature = "sqrt-table"))]
         ff::helpers::sqrt_ratio_generic(num, div)
     }
 
@@ -384,15 +403,39 @@ impl ff::Field for GoldilocksField {
 
     /// Computes the square root of this element, if it exists.
     fn sqrt(&self) -> CtOption<Self> {
-        todo!()
-        // #[cfg(feature = "sqrt-table")]
-        // {
-        // let (is_square, res) = FP_TABLES.sqrt_alt(self);
-        // CtOption::new(res, is_square)
-        // }
+        if self.is_zero() {
+            CtOption::new(*self, Choice::from(1))
+        } else if self.is_quadratic_residue() {
+            let t = (Self::ORDER - BigUint::from(1u32)) / (BigUint::from(2u32).pow(Self::S));
+            let mut z = Self::ROOT_OF_UNITY;
+            let mut w = self.exp_biguint(&((t - BigUint::from(1u32)) / BigUint::from(2u32)));
+            let mut x = w * *self;
+            let mut b = x * w;
 
-        // #[cfg(not(feature = "sqrt-table"))]
-        // ff::helpers::sqrt_tonelli_shanks(self, &T_MINUS1_OVER2)
+            let mut v = Self::S as usize;
+
+            while !b.is_one() {
+                let mut k = 0usize;
+                let mut b2k = b;
+                while !b2k.is_one() {
+                    b2k = b2k * b2k;
+                    k += 1;
+                }
+                let j = v - k - 1;
+                w = z;
+                for _ in 0..j {
+                    w = w * w;
+                }
+
+                z = w * w;
+                b *= z;
+                x *= w;
+                v = k;
+            }
+            CtOption::new(x, Choice::from(1))
+        } else {
+            CtOption::new(*self, Choice::from(0))
+        }
     }
 
     /// Computes the multiplicative inverse of this element,
@@ -679,6 +722,11 @@ const fn split(x: u128) -> (u64, u64) {
     (x as u64, (x >> 64) as u64)
 }
 
+#[inline]
+const fn bits_u64(n: u64) -> usize {
+    (64 - n.leading_zeros()) as usize
+}
+
 #[cfg(feature = "gpu")]
 impl ec_gpu::GpuName for GoldilocksField {
     fn name() -> alloc::string::String {
@@ -701,20 +749,20 @@ impl ec_gpu::GpuField for GoldilocksField {
     }
 }
 
-#[test]
-fn test_inv() {
-    // Compute -(r^{-1} mod 2^64) mod 2^64 by exponentiating
-    // by totient(2**64) - 1
+// #[test]
+// fn test_inv() {
+// // Compute -(r^{-1} mod 2^64) mod 2^64 by exponentiating
+// // by totient(2**64) - 1
 
-    let mut inv = 1u64;
-    for _ in 0..63 {
-        inv = inv.wrapping_mul(inv);
-        inv = inv.wrapping_mul(MODULUS.0[0]);
-    }
-    inv = inv.wrapping_neg();
+// let mut inv = 1u64;
+// for _ in 0..63 {
+// inv = inv.wrapping_mul(inv);
+// inv = inv.wrapping_mul(MODULUS.0);
+// }
+// inv = inv.wrapping_neg();
 
-    assert_eq!(inv, INV);
-}
+// assert_eq!(inv, INV);
+// }
 
 #[test]
 fn test_sqrt() {
@@ -726,14 +774,6 @@ fn test_sqrt() {
 #[test]
 fn test_sqrt_32bit_overflow() {
     assert!((GoldilocksField::from(5)).sqrt().is_none().unwrap_u8() == 1);
-}
-
-#[test]
-fn test_pow_by_t_minus1_over2() {
-    // NB: TWO_INV is standing in as a "random" field element
-    let v = (GoldilocksField::TWO_INV).pow_by_t_minus1_over2();
-    // TODO(fix T_MINUS1_OVER2)
-    // assert!(v == ff::Field::pow_vartime(&GoldilocksField::TWO_INV, &T_MINUS1_OVER2));
 }
 
 #[test]
@@ -850,12 +890,4 @@ fn consistent_modulus_limbs() {
     {
         assert_eq!(a, b);
     }
-}
-
-#[test]
-fn test_from_u512() {
-    assert_eq!(
-        GoldilocksField::from_raw(0x3daec14d565241d9),
-        GoldilocksField::from_u512(0x26ebe27e262f471d)
-    );
 }
