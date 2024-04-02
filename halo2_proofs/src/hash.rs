@@ -6,6 +6,8 @@ use ff::Field;
 
 ///
 pub mod poseidon;
+///
+pub mod poseidon_goldilocks;
 
 pub use poseidon::*;
 
@@ -19,6 +21,9 @@ pub trait GenericHashOut<F: Field>: Copy + Clone + Debug + Eq + PartialEq + Send
 
     ///
     fn to_vec(&self) -> Vec<F>;
+
+    ///
+    fn from_vec(elements: Vec<F>) -> Self;
 }
 
 ///

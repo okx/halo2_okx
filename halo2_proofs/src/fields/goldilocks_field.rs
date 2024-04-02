@@ -29,6 +29,10 @@ impl Field64 for GoldilocksField {
     fn to_noncanonical_u64(&self) -> u64 {
         self.0
     }
+
+    fn from_noncanonical_u128(n: u128) -> Self {
+        reduce128(n)
+    }
 }
 
 use core::fmt;
