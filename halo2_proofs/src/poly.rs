@@ -7,6 +7,7 @@ use crate::plonk::Assigned;
 
 use group::ff::{BatchInvert, Field};
 
+use anyhow::{ensure, Result};
 use std::fmt::Debug;
 use std::marker::PhantomData;
 use std::ops::{Add, Deref, DerefMut, Index, IndexMut, Mul, RangeFrom, RangeFull};
@@ -129,6 +130,32 @@ impl<F, B> Polynomial<F, B> {
     /// coefficients used to describe it.
     pub fn num_coeffs(&self) -> usize {
         self.values.len()
+    }
+}
+
+impl<F: Field> Polynomial<F, Coeff> {
+    ///
+    pub fn lde(&self, rate_bits: usize) -> Self {
+        self.padded(self.len() << rate_bits)
+    }
+
+    ///
+    pub fn pad(&mut self, new_len: usize) -> Result<()> {
+        ensure!(
+            new_len >= self.len(),
+            "Trying to pad a polynomial of length {} to a length of {}.",
+            self.len(),
+            new_len
+        );
+        self.values.resize(new_len, F::ZERO);
+        Ok(())
+    }
+
+    ///
+    pub fn padded(&self, new_len: usize) -> Self {
+        let mut poly = self.clone();
+        poly.pad(new_len).unwrap();
+        poly
     }
 }
 

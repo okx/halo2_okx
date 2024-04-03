@@ -1,14 +1,11 @@
-use group::{
-    ff::{BatchInvert, Field, PrimeField},
-    Curve,
-};
+use group::ff::{BatchInvert, Field, PrimeField};
 use rand_core::RngCore;
 use std::iter::{self, ExactSizeIterator};
 
-use super::super::{circuit::Any, ChallengeBeta, ChallengeGamma, ChallengeX};
+use super::super::{circuit::Any, ChallengeBeta, ChallengeGamma, ChallengeX, GenericConfig};
 use super::{Argument, ProvingKey};
 use crate::{
-    arithmetic::{eval_polynomial, parallelize, CurveAffine},
+    arithmetic::{eval_polynomial, parallelize},
     plonk::{self, Error},
     poly::{
         self,
@@ -19,33 +16,33 @@ use crate::{
     transcript::{EncodedChallenge, TranscriptWrite},
 };
 
-pub struct CommittedSet<C: CurveAffine, Ev> {
+pub struct CommittedSet<C: GenericConfig, Ev> {
     permutation_product_poly: Polynomial<C::Scalar, Coeff>,
     permutation_product_coset: poly::AstLeaf<Ev, ExtendedLagrangeCoeff>,
     permutation_product_blind: Blind<C::Scalar>,
 }
 
-pub(crate) struct Committed<C: CurveAffine, Ev> {
+pub(crate) struct Committed<C: GenericConfig, Ev> {
     sets: Vec<CommittedSet<C, Ev>>,
 }
 
-pub struct ConstructedSet<C: CurveAffine> {
+pub struct ConstructedSet<C: GenericConfig> {
     permutation_product_poly: Polynomial<C::Scalar, Coeff>,
     permutation_product_blind: Blind<C::Scalar>,
 }
 
-pub(crate) struct Constructed<C: CurveAffine> {
+pub(crate) struct Constructed<C: GenericConfig> {
     sets: Vec<ConstructedSet<C>>,
 }
 
-pub(crate) struct Evaluated<C: CurveAffine> {
+pub(crate) struct Evaluated<C: GenericConfig> {
     constructed: Constructed<C>,
 }
 
 impl Argument {
     #[allow(clippy::too_many_arguments)]
     pub(in crate::plonk) fn commit<
-        C: CurveAffine,
+        C: GenericConfig,
         E: EncodedChallenge<C>,
         Ev: Copy + Send + Sync,
         R: RngCore,
@@ -169,7 +166,7 @@ impl Argument {
 
             let blind = Blind(C::Scalar::random(&mut rng));
 
-            let permutation_product_commitment_projective = params.commit_lagrange(&z, blind);
+            let permutation_product_commitment = params.commit_lagrange(&z, blind);
             let permutation_product_blind = blind;
             let z = domain.lagrange_to_coeff(z);
             let permutation_product_poly = z.clone();
@@ -177,11 +174,8 @@ impl Argument {
             let permutation_product_coset =
                 evaluator.register_poly(domain.coeff_to_extended(z.clone()));
 
-            let permutation_product_commitment =
-                permutation_product_commitment_projective.to_affine();
-
             // Hash the permutation product commitment
-            transcript.write_point(permutation_product_commitment)?;
+            transcript.write_commitment(permutation_product_commitment)?;
 
             sets.push(CommittedSet {
                 permutation_product_poly,
@@ -194,7 +188,7 @@ impl Argument {
     }
 }
 
-impl<C: CurveAffine, Ev: Copy + Send + Sync> Committed<C, Ev> {
+impl<C: GenericConfig, Ev: Copy + Send + Sync> Committed<C, Ev> {
     #[allow(clippy::too_many_arguments)]
     pub(in crate::plonk) fn construct<'a>(
         self,
@@ -312,7 +306,7 @@ impl<C: CurveAffine, Ev: Copy + Send + Sync> Committed<C, Ev> {
     }
 }
 
-impl<C: CurveAffine> super::ProvingKey<C> {
+impl<C: GenericConfig> super::ProvingKey<C> {
     pub(in crate::plonk) fn open(
         &self,
         x: ChallengeX<C>,
@@ -338,7 +332,7 @@ impl<C: CurveAffine> super::ProvingKey<C> {
     }
 }
 
-impl<C: CurveAffine> Constructed<C> {
+impl<C: GenericConfig> Constructed<C> {
     pub(in crate::plonk) fn evaluate<E: EncodedChallenge<C>, T: TranscriptWrite<C, E>>(
         self,
         pk: &plonk::ProvingKey<C>,
@@ -385,7 +379,7 @@ impl<C: CurveAffine> Constructed<C> {
     }
 }
 
-impl<C: CurveAffine> Evaluated<C> {
+impl<C: GenericConfig> Evaluated<C> {
     pub(in crate::plonk) fn open<'a>(
         &'a self,
         pk: &'a plonk::ProvingKey<C>,

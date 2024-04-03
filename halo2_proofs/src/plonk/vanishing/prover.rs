@@ -1,12 +1,12 @@
 use std::iter;
 
 use ff::Field;
-use group::Curve;
 use rand_core::RngCore;
 
 use super::Argument;
+use super::GenericConfig;
 use crate::{
-    arithmetic::{eval_polynomial, CurveAffine},
+    arithmetic::eval_polynomial,
     plonk::{ChallengeX, ChallengeY, Error},
     poly::{
         self,
@@ -17,24 +17,24 @@ use crate::{
     transcript::{EncodedChallenge, TranscriptWrite},
 };
 
-pub(in crate::plonk) struct Committed<C: CurveAffine> {
+pub(in crate::plonk) struct Committed<C: GenericConfig> {
     random_poly: Polynomial<C::Scalar, Coeff>,
     random_blind: Blind<C::Scalar>,
 }
 
-pub(in crate::plonk) struct Constructed<C: CurveAffine> {
+pub(in crate::plonk) struct Constructed<C: GenericConfig> {
     h_pieces: Vec<Polynomial<C::Scalar, Coeff>>,
     h_blinds: Vec<Blind<C::Scalar>>,
     committed: Committed<C>,
 }
 
-pub(in crate::plonk) struct Evaluated<C: CurveAffine> {
+pub(in crate::plonk) struct Evaluated<C: GenericConfig> {
     h_poly: Polynomial<C::Scalar, Coeff>,
     h_blind: Blind<C::Scalar>,
     committed: Committed<C>,
 }
 
-impl<C: CurveAffine> Argument<C> {
+impl<C: GenericConfig> Argument<C> {
     pub(in crate::plonk) fn commit<E: EncodedChallenge<C>, R: RngCore, T: TranscriptWrite<C, E>>(
         params: &Params<C>,
         domain: &EvaluationDomain<C::Scalar>,
@@ -50,8 +50,8 @@ impl<C: CurveAffine> Argument<C> {
         let random_blind = Blind(C::Scalar::random(rng));
 
         // Commit
-        let c = params.commit(&random_poly, random_blind).to_affine();
-        transcript.write_point(c)?;
+        let c = params.commit(&random_poly, random_blind);
+        transcript.write_commitment(c)?;
 
         Ok(Committed {
             random_poly,
@@ -60,7 +60,7 @@ impl<C: CurveAffine> Argument<C> {
     }
 }
 
-impl<C: CurveAffine> Committed<C> {
+impl<C: GenericConfig> Committed<C> {
     #[allow(clippy::too_many_arguments)]
     pub(in crate::plonk) fn construct<
         E: EncodedChallenge<C>,
@@ -99,18 +99,15 @@ impl<C: CurveAffine> Committed<C> {
             .collect();
 
         // Compute commitments to each h(X) piece
-        let h_commitments_projective: Vec<_> = h_pieces
+        let h_commitments: Vec<_> = h_pieces
             .iter()
             .zip(h_blinds.iter())
             .map(|(h_piece, blind)| params.commit(h_piece, *blind))
             .collect();
-        let mut h_commitments = vec![C::identity(); h_commitments_projective.len()];
-        C::Curve::batch_normalize(&h_commitments_projective, &mut h_commitments);
-        let h_commitments = h_commitments;
 
         // Hash each h(X) piece
-        for c in h_commitments.iter() {
-            transcript.write_point(*c)?;
+        for c in h_commitments.into_iter() {
+            transcript.write_commitment(c)?;
         }
 
         Ok(Constructed {
@@ -121,7 +118,7 @@ impl<C: CurveAffine> Committed<C> {
     }
 }
 
-impl<C: CurveAffine> Constructed<C> {
+impl<C: GenericConfig> Constructed<C> {
     pub(in crate::plonk) fn evaluate<E: EncodedChallenge<C>, T: TranscriptWrite<C, E>>(
         self,
         x: ChallengeX<C>,
@@ -152,7 +149,7 @@ impl<C: CurveAffine> Constructed<C> {
     }
 }
 
-impl<C: CurveAffine> Evaluated<C> {
+impl<C: GenericConfig> Evaluated<C> {
     pub(in crate::plonk) fn open(
         &self,
         x: ChallengeX<C>,

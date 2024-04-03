@@ -5,24 +5,23 @@ use super::super::{
 };
 use super::Argument;
 use crate::{
-    arithmetic::CurveAffine,
-    plonk::{Error, VerifyingKey},
+    plonk::{Error, GenericConfig, VerifyingKey},
     poly::{multiopen::VerifierQuery, Rotation},
     transcript::{EncodedChallenge, TranscriptRead},
 };
 use ff::Field;
 
-pub struct PermutationCommitments<C: CurveAffine> {
-    permuted_input_commitment: C,
-    permuted_table_commitment: C,
+pub struct PermutationCommitments<C: GenericConfig> {
+    permuted_input_commitment: C::Commitment,
+    permuted_table_commitment: C::Commitment,
 }
 
-pub struct Committed<C: CurveAffine> {
+pub struct Committed<C: GenericConfig> {
     permuted: PermutationCommitments<C>,
-    product_commitment: C,
+    product_commitment: C::Commitment,
 }
 
-pub struct Evaluated<C: CurveAffine> {
+pub struct Evaluated<C: GenericConfig> {
     committed: Committed<C>,
     product_eval: C::Scalar,
     product_next_eval: C::Scalar,
@@ -33,15 +32,15 @@ pub struct Evaluated<C: CurveAffine> {
 
 impl<F: Field> Argument<F> {
     pub(in crate::plonk) fn read_permuted_commitments<
-        C: CurveAffine,
+        C: GenericConfig,
         E: EncodedChallenge<C>,
         T: TranscriptRead<C, E>,
     >(
         &self,
         transcript: &mut T,
     ) -> Result<PermutationCommitments<C>, Error> {
-        let permuted_input_commitment = transcript.read_point()?;
-        let permuted_table_commitment = transcript.read_point()?;
+        let permuted_input_commitment = transcript.read_commitment()?;
+        let permuted_table_commitment = transcript.read_commitment()?;
 
         Ok(PermutationCommitments {
             permuted_input_commitment,
@@ -50,7 +49,7 @@ impl<F: Field> Argument<F> {
     }
 }
 
-impl<C: CurveAffine> PermutationCommitments<C> {
+impl<C: GenericConfig> PermutationCommitments<C> {
     pub(in crate::plonk) fn read_product_commitment<
         E: EncodedChallenge<C>,
         T: TranscriptRead<C, E>,
@@ -58,7 +57,7 @@ impl<C: CurveAffine> PermutationCommitments<C> {
         self,
         transcript: &mut T,
     ) -> Result<Committed<C>, Error> {
-        let product_commitment = transcript.read_point()?;
+        let product_commitment = transcript.read_commitment()?;
 
         Ok(Committed {
             permuted: self,
@@ -67,7 +66,7 @@ impl<C: CurveAffine> PermutationCommitments<C> {
     }
 }
 
-impl<C: CurveAffine> Committed<C> {
+impl<C: GenericConfig> Committed<C> {
     pub(crate) fn evaluate<E: EncodedChallenge<C>, T: TranscriptRead<C, E>>(
         self,
         transcript: &mut T,
@@ -89,7 +88,7 @@ impl<C: CurveAffine> Committed<C> {
     }
 }
 
-impl<C: CurveAffine> Evaluated<C> {
+impl<C: GenericConfig> Evaluated<C> {
     #[allow(clippy::too_many_arguments)]
     pub(in crate::plonk) fn expressions<'a>(
         &'a self,
@@ -166,11 +165,11 @@ impl<C: CurveAffine> Evaluated<C> {
             ))
     }
 
-    pub(in crate::plonk) fn queries<'r, 'params: 'r>(
+    pub(in crate::plonk) fn queries<'r>(
         &'r self,
         vk: &'r VerifyingKey<C>,
         x: ChallengeX<C>,
-    ) -> impl Iterator<Item = VerifierQuery<'r, 'params, C>> + Clone {
+    ) -> impl Iterator<Item = VerifierQuery<'r, C>> + Clone {
         let x_inv = vk.domain.rotate_omega(*x, Rotation::prev());
         let x_next = vk.domain.rotate_omega(*x, Rotation::next());
 

@@ -1,10 +1,10 @@
 use super::super::{
     circuit::Expression, ChallengeBeta, ChallengeGamma, ChallengeTheta, ChallengeX, Error,
-    ProvingKey,
+    GenericConfig, ProvingKey,
 };
 use super::Argument;
 use crate::{
-    arithmetic::{eval_polynomial, parallelize, CurveAffine},
+    arithmetic::{eval_polynomial, parallelize},
     poly::{
         self,
         commitment::{Blind, Params},
@@ -14,19 +14,12 @@ use crate::{
     transcript::{EncodedChallenge, TranscriptWrite},
 };
 use ff::WithSmallOrderMulGroup;
-use group::{
-    ff::{BatchInvert, Field},
-    Curve,
-};
+use group::ff::{BatchInvert, Field};
 use rand_core::RngCore;
-use std::{
-    collections::BTreeMap,
-    iter,
-    ops::{Mul, MulAssign},
-};
+use std::{collections::BTreeMap, iter};
 
 #[derive(Debug)]
-pub(in crate::plonk) struct Permuted<C: CurveAffine, Ev> {
+pub(in crate::plonk) struct Permuted<C: GenericConfig, Ev> {
     compressed_input_expression: Polynomial<C::Scalar, LagrangeCoeff>,
     permuted_input_expression: Polynomial<C::Scalar, LagrangeCoeff>,
     compressed_input_coset: poly::Ast<Ev, C::Scalar, ExtendedLagrangeCoeff>,
@@ -42,14 +35,14 @@ pub(in crate::plonk) struct Permuted<C: CurveAffine, Ev> {
 }
 
 #[derive(Debug)]
-pub(in crate::plonk) struct Committed<C: CurveAffine, Ev> {
+pub(in crate::plonk) struct Committed<C: GenericConfig, Ev> {
     permuted: Permuted<C, Ev>,
     product_poly: Polynomial<C::Scalar, Coeff>,
     product_coset: poly::AstLeaf<Ev, ExtendedLagrangeCoeff>,
     product_blind: Blind<C::Scalar>,
 }
 
-pub(in crate::plonk) struct Constructed<C: CurveAffine> {
+pub(in crate::plonk) struct Constructed<C: GenericConfig> {
     permuted_input_poly: Polynomial<C::Scalar, Coeff>,
     permuted_input_blind: Blind<C::Scalar>,
     permuted_table_poly: Polynomial<C::Scalar, Coeff>,
@@ -58,7 +51,7 @@ pub(in crate::plonk) struct Constructed<C: CurveAffine> {
     product_blind: Blind<C::Scalar>,
 }
 
-pub(in crate::plonk) struct Evaluated<C: CurveAffine> {
+pub(in crate::plonk) struct Evaluated<C: GenericConfig> {
     constructed: Constructed<C>,
 }
 
@@ -99,8 +92,7 @@ impl<F: WithSmallOrderMulGroup<3>> Argument<F> {
         transcript: &mut T,
     ) -> Result<Permuted<C, Ec>, Error>
     where
-        C: CurveAffine<ScalarExt = F>,
-        C::Curve: Mul<F, Output = C::Curve> + MulAssign<F>,
+        C: GenericConfig<Scalar = F>,
     {
         // Closure to get values of expressions and compress them
         let compress_expressions = |expressions: &[Expression<C::Scalar>]| {
@@ -203,7 +195,7 @@ impl<F: WithSmallOrderMulGroup<3>> Argument<F> {
         let mut commit_values = |values: &Polynomial<C::Scalar, LagrangeCoeff>| {
             let poly = pk.vk.domain.lagrange_to_coeff(values.clone());
             let blind = Blind(C::Scalar::random(&mut rng));
-            let commitment = params.commit_lagrange(values, blind).to_affine();
+            let commitment = params.commit_lagrange(values, blind);
             (poly, blind, commitment)
         };
 
@@ -216,10 +208,10 @@ impl<F: WithSmallOrderMulGroup<3>> Argument<F> {
             commit_values(&permuted_table_expression);
 
         // Hash permuted input commitment
-        transcript.write_point(permuted_input_commitment)?;
+        transcript.write_commitment(permuted_input_commitment)?;
 
         // Hash permuted table commitment
-        transcript.write_point(permuted_table_commitment)?;
+        transcript.write_commitment(permuted_table_commitment)?;
 
         let permuted_input_coset = coset_evaluator
             .register_poly(pk.vk.domain.coeff_to_extended(permuted_input_poly.clone()));
@@ -243,7 +235,7 @@ impl<F: WithSmallOrderMulGroup<3>> Argument<F> {
     }
 }
 
-impl<C: CurveAffine, Ev: Copy + Send + Sync> Permuted<C, Ev> {
+impl<C: GenericConfig, Ev: Copy + Send + Sync> Permuted<C, Ev> {
     /// Given a Lookup with input expressions, table expressions, and the permuted
     /// input expression and permuted table expression, this method constructs the
     /// grand product polynomial over the lookup. The grand product polynomial
@@ -376,12 +368,12 @@ impl<C: CurveAffine, Ev: Copy + Send + Sync> Permuted<C, Ev> {
         }
 
         let product_blind = Blind(C::Scalar::random(rng));
-        let product_commitment = params.commit_lagrange(&z, product_blind).to_affine();
+        let product_commitment = params.commit_lagrange(&z, product_blind);
         let z = pk.vk.domain.lagrange_to_coeff(z);
         let product_coset = evaluator.register_poly(pk.vk.domain.coeff_to_extended(z.clone()));
 
         // Hash product commitment
-        transcript.write_point(product_commitment)?;
+        transcript.write_commitment(product_commitment)?;
 
         Ok(Committed::<C, _> {
             permuted: self,
@@ -392,7 +384,7 @@ impl<C: CurveAffine, Ev: Copy + Send + Sync> Permuted<C, Ev> {
     }
 }
 
-impl<'a, C: CurveAffine, Ev: Copy + Send + Sync + 'a> Committed<C, Ev> {
+impl<'a, C: GenericConfig, Ev: Copy + Send + Sync + 'a> Committed<C, Ev> {
     /// Given a Lookup with input expressions, table expressions, permuted input
     /// expression, permuted table expression, and grand product polynomial, this
     /// method constructs constraints that must hold between these values.
@@ -477,7 +469,7 @@ impl<'a, C: CurveAffine, Ev: Copy + Send + Sync + 'a> Committed<C, Ev> {
     }
 }
 
-impl<C: CurveAffine> Constructed<C> {
+impl<C: GenericConfig> Constructed<C> {
     pub(in crate::plonk) fn evaluate<E: EncodedChallenge<C>, T: TranscriptWrite<C, E>>(
         self,
         pk: &ProvingKey<C>,
@@ -509,7 +501,7 @@ impl<C: CurveAffine> Constructed<C> {
     }
 }
 
-impl<C: CurveAffine> Evaluated<C> {
+impl<C: GenericConfig> Evaluated<C> {
     pub(in crate::plonk) fn open<'a>(
         &'a self,
         pk: &'a ProvingKey<C>,
@@ -560,7 +552,7 @@ type ExpressionPair<F> = (Polynomial<F, LagrangeCoeff>, Polynomial<F, LagrangeCo
 /// - the first row in a sequence of like values in A' is the row
 ///   that has the corresponding value in S'.
 /// This method returns (A', S') if no errors are encountered.
-fn permute_expression_pair<C: CurveAffine, R: RngCore>(
+fn permute_expression_pair<C: GenericConfig, R: RngCore>(
     pk: &ProvingKey<C>,
     params: &Params<C>,
     domain: &EvaluationDomain<C::Scalar>,

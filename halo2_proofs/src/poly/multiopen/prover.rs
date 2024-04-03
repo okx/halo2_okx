@@ -3,15 +3,14 @@ use super::super::{
     Coeff, Polynomial,
 };
 use super::{
-    construct_intermediate_sets, ChallengeX1, ChallengeX2, ChallengeX3, ChallengeX4, ProverQuery,
-    Query,
+    construct_intermediate_sets, ChallengeX1, ChallengeX2, ChallengeX3, ChallengeX4, GenericConfig,
+    ProverQuery, Query,
 };
 
-use crate::arithmetic::{eval_polynomial, kate_division, CurveAffine};
+use crate::arithmetic::{eval_polynomial, kate_division};
 use crate::transcript::{EncodedChallenge, TranscriptWrite};
 
 use ff::Field;
-use group::Curve;
 use rand_core::RngCore;
 use std::io;
 use std::marker::PhantomData;
@@ -20,7 +19,7 @@ use std::marker::PhantomData;
 pub fn create_proof<
     'a,
     I,
-    C: CurveAffine,
+    C: GenericConfig,
     E: EncodedChallenge<C>,
     R: RngCore,
     T: TranscriptWrite<C, E>,
@@ -88,9 +87,9 @@ where
         .unwrap();
 
     let q_prime_blind = Blind(C::Scalar::random(&mut rng));
-    let q_prime_commitment = params.commit(&q_prime_poly, q_prime_blind).to_affine();
+    let q_prime_commitment = params.commit(&q_prime_poly, q_prime_blind);
 
-    transcript.write_point(q_prime_commitment)?;
+    transcript.write_commitment(q_prime_commitment)?;
 
     let x_3: ChallengeX3<_> = transcript.squeeze_challenge_scalar();
 
@@ -117,18 +116,18 @@ where
 
 #[doc(hidden)]
 #[derive(Copy, Clone)]
-pub struct PolynomialPointer<'a, C: CurveAffine> {
+pub struct PolynomialPointer<'a, C: GenericConfig> {
     poly: &'a Polynomial<C::Scalar, Coeff>,
     blind: commitment::Blind<C::Scalar>,
 }
 
-impl<'a, C: CurveAffine> PartialEq for PolynomialPointer<'a, C> {
+impl<'a, C: GenericConfig> PartialEq for PolynomialPointer<'a, C> {
     fn eq(&self, other: &Self) -> bool {
         std::ptr::eq(self.poly, other.poly)
     }
 }
 
-impl<'a, C: CurveAffine> Query<C::Scalar> for ProverQuery<'a, C> {
+impl<'a, C: GenericConfig> Query<C::Scalar> for ProverQuery<'a, C> {
     type Commitment = PolynomialPointer<'a, C>;
     type Eval = ();
 

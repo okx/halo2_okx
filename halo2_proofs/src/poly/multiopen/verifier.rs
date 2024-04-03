@@ -1,32 +1,22 @@
 use ff::Field;
 
-use super::super::{
-    commitment::{Guard, Params, MSM},
-    Error,
-};
+use super::super::{commitment::Params, Error};
 use super::{
     construct_intermediate_sets, ChallengeX1, ChallengeX2, ChallengeX3, ChallengeX4,
     CommitmentReference, Query, VerifierQuery,
 };
-use crate::arithmetic::{eval_polynomial, lagrange_interpolate, CurveAffine};
+use crate::arithmetic::{eval_polynomial, lagrange_interpolate};
+use crate::plonk::config::GenericConfig;
 use crate::transcript::{EncodedChallenge, TranscriptRead};
 
 /// Verify a multi-opening proof
-pub fn verify_proof<
-    'r,
-    'params: 'r,
-    I,
-    C: CurveAffine,
-    E: EncodedChallenge<C>,
-    T: TranscriptRead<C, E>,
->(
-    params: &'params Params<C>,
+pub fn verify_proof<'r, I, C: GenericConfig + 'r, E: EncodedChallenge<C>, T: TranscriptRead<C, E>>(
+    params: &Params<C>,
     transcript: &mut T,
     queries: I,
-    mut msm: MSM<'params, C>,
-) -> Result<Guard<'params, C, E>, Error>
+) -> Result<(), Error>
 where
-    I: IntoIterator<Item = VerifierQuery<'r, 'params, C>> + Clone,
+    I: IntoIterator<Item = VerifierQuery<'r, C>> + Clone,
 {
     // Sample x_1 for compressing openings at the same point sets together
     let x_1: ChallengeX1<_> = transcript.squeeze_challenge_scalar();
@@ -39,9 +29,9 @@ where
 
     // Compress the commitments and expected evaluations at x together.
     // using the challenge x_1
-    let mut q_commitments: Vec<_> = vec![
-        (params.empty_msm(), C::Scalar::ONE); // (accumulator, next x_1 power).
-        point_sets.len()];
+    // let mut q_commitments: Vec<_> = vec![
+    // (params.empty_msm(), C::Scalar::ONE); // (accumulator, next x_1 power).
+    // point_sets.len()];
 
     // A vec of vecs of evals. The outer vec corresponds to the point set,
     // while the inner vec corresponds to the points in a particular set.
@@ -50,39 +40,41 @@ where
         q_eval_sets.push(vec![C::Scalar::ZERO; point_set.len()]);
     }
 
-    {
-        let mut accumulate = |set_idx: usize, new_commitment, evals: Vec<C::Scalar>| {
-            let (q_commitment, x_1_power) = &mut q_commitments[set_idx];
-            match new_commitment {
-                CommitmentReference::Commitment(c) => {
-                    q_commitment.append_term(*x_1_power, *c);
-                }
-                CommitmentReference::MSM(msm) => {
-                    let mut msm = msm.clone();
-                    msm.scale(*x_1_power);
-                    q_commitment.add_msm(&msm);
-                }
-            }
-            for (eval, set_eval) in evals.iter().zip(q_eval_sets[set_idx].iter_mut()) {
-                *set_eval += (*eval) * (*x_1_power);
-            }
-            *x_1_power *= *x_1;
-        };
+    // {
+    // let mut accumulate = |set_idx: usize, new_commitment, evals: Vec<C::Scalar>| {
+    // let (q_commitment, x_1_power) = &mut q_commitments[set_idx];
+    // match new_commitment {
+    // CommitmentReference::Commitment(c) => {
+    // q_commitment.append_term(*x_1_power, *c);
+    // }
+    // // CommitmentReference::MSM(msm) => {
+    // // let mut msm = msm.clone();
+    // // msm.scale(*x_1_power);
+    // // q_commitment.add_msm(&msm);
+    // // }
+    // }
+    // for (eval, set_eval) in evals.iter().zip(q_eval_sets[set_idx].iter_mut()) {
+    // *set_eval += (*eval) * (*x_1_power);
+    // }
+    // *x_1_power *= *x_1;
+    // };
 
-        // Each commitment corresponds to evaluations at a set of points.
-        // For each set, we collapse each commitment's evals pointwise.
-        // Run in order of increasing x_1 powers.
-        for commitment_data in commitment_map.into_iter().rev() {
-            accumulate(
-                commitment_data.set_index,  // set_idx,
-                commitment_data.commitment, // commitment,
-                commitment_data.evals,      // evals
-            );
-        }
-    }
+    // // Each commitment corresponds to evaluations at a set of points.
+    // // For each set, we collapse each commitment's evals pointwise.
+    // // Run in order of increasing x_1 powers.
+    // for commitment_data in commitment_map.into_iter().rev() {
+    // accumulate(
+    // commitment_data.set_index,  // set_idx,
+    // commitment_data.commitment, // commitment,
+    // commitment_data.evals,      // evals
+    // );
+    // }
+    // }
 
     // Obtain the commitment to the multi-point quotient polynomial f(X).
-    let q_prime_commitment = transcript.read_point().map_err(|_| Error::SamplingError)?;
+    let q_prime_commitment = transcript
+        .read_commitment()
+        .map_err(|_| Error::SamplingError)?;
 
     // Sample a challenge x_3 for checking that f(X) was committed to
     // correctly.
@@ -118,22 +110,22 @@ where
     let x_4: ChallengeX4<_> = transcript.squeeze_challenge_scalar();
 
     // Compute the final commitment that has to be opened
-    msm.append_term(C::Scalar::ONE, q_prime_commitment);
-    let (msm, v) = q_commitments.into_iter().zip(u.iter()).fold(
-        (msm, msm_eval),
-        |(mut msm, msm_eval), ((q_commitment, _), q_eval)| {
-            msm.scale(*x_4);
-            msm.add_msm(&q_commitment);
-            (msm, msm_eval * &(*x_4) + q_eval)
-        },
-    );
+    // msm.append_term(C::Scalar::ONE, q_prime_commitment);
+    // let (msm, v) = q_commitments.into_iter().zip(u.iter()).fold(
+    // (msm, msm_eval),
+    // |(mut msm, msm_eval), ((q_commitment, _), q_eval)| {
+    // msm.scale(*x_4);
+    // msm.add_msm(&q_commitment);
+    // (msm, msm_eval * &(*x_4) + q_eval)
+    // },
+    // );
 
     // Verify the opening proof
-    super::commitment::verify_proof(params, msm, transcript, *x_3, v)
+    super::commitment::verify_proof(params, transcript, *x_3)
 }
 
-impl<'a, 'b, C: CurveAffine> Query<C::Scalar> for VerifierQuery<'a, 'b, C> {
-    type Commitment = CommitmentReference<'a, 'b, C>;
+impl<'a, C: GenericConfig> Query<C::Scalar> for VerifierQuery<'a, C> {
+    type Commitment = CommitmentReference<'a, C>;
     type Eval = C::Scalar;
 
     fn get_point(&self) -> C::Scalar {
@@ -143,6 +135,6 @@ impl<'a, 'b, C: CurveAffine> Query<C::Scalar> for VerifierQuery<'a, 'b, C> {
         self.eval
     }
     fn get_commitment(&self) -> Self::Commitment {
-        self.commitment
+        self.commitment.clone()
     }
 }

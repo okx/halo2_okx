@@ -2,8 +2,8 @@
 
 use std::ops::Range;
 
+use super::config::GenericConfig;
 use ff::{Field, FromUniformBytes};
-use group::Curve;
 
 use super::{
     circuit::{
@@ -13,7 +13,6 @@ use super::{
     permutation, Assigned, Error, LagrangeCoeff, Polynomial, ProvingKey, VerifyingKey,
 };
 use crate::{
-    arithmetic::CurveAffine,
     circuit::Value,
     poly::{
         batch_invert_assigned,
@@ -30,7 +29,7 @@ pub(crate) fn create_domain<C, ConcreteCircuit>(
     ConcreteCircuit::Config,
 )
 where
-    C: CurveAffine,
+    C: GenericConfig,
     ConcreteCircuit: Circuit<C::Scalar>,
 {
     let mut cs = ConstraintSystem::default();
@@ -191,8 +190,8 @@ pub fn keygen_vk<C, ConcreteCircuit>(
     circuit: &ConcreteCircuit,
 ) -> Result<VerifyingKey<C>, Error>
 where
-    C: CurveAffine,
-    C::Scalar: FromUniformBytes<64>,
+    C: GenericConfig,
+    C::Scalar: FromUniformBytes<8>,
     ConcreteCircuit: Circuit<C::Scalar>,
 {
     let (domain, cs, config) = create_domain::<C, ConcreteCircuit>(params);
@@ -232,7 +231,7 @@ where
 
     let fixed_commitments = fixed
         .iter()
-        .map(|poly| params.commit_lagrange(poly, Blind::default()).to_affine())
+        .map(|poly| params.commit_lagrange(poly, Blind::default()))
         .collect();
 
     Ok(VerifyingKey::from_parts(
@@ -250,7 +249,7 @@ pub fn keygen_pk<C, ConcreteCircuit>(
     circuit: &ConcreteCircuit,
 ) -> Result<ProvingKey<C>, Error>
 where
-    C: CurveAffine,
+    C: GenericConfig,
     ConcreteCircuit: Circuit<C::Scalar>,
 {
     let mut cs = ConstraintSystem::default();
