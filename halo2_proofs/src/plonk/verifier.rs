@@ -22,7 +22,7 @@ pub struct SingleVerifier<'params, C: GenericConfig> {
 
 impl<'params, C: GenericConfig> SingleVerifier<'params, C> {
     /// Constructs a new single proof verifier.
-    pub fn new(params: &'params Params<C>) -> Self {
+    pub fn new(_params: &'params Params<C>) -> Self {
         SingleVerifier {
             _marker: PhantomData,
         }
@@ -33,7 +33,7 @@ impl<'params, C: GenericConfig> SingleVerifier<'params, C> {
 pub fn verify_proof<'params, C: GenericConfig, E: EncodedChallenge<C>, T: TranscriptRead<C, E>>(
     params: &'params Params<C>,
     vk: &VerifyingKey<C>,
-    strategy: SingleVerifier<'params, C>,
+    _strategy: SingleVerifier<'params, C>,
     instances: &[&[&[C::Scalar]]],
     transcript: &mut T,
 ) -> Result<(), Error> {
@@ -71,7 +71,7 @@ pub fn verify_proof<'params, C: GenericConfig, E: EncodedChallenge<C>, T: Transc
     for instance_commitments in instance_commitments.iter() {
         // Hash the instance (external) commitments into the transcript
         for commitment in instance_commitments {
-            transcript.common_commitment(*commitment)?
+            transcript.common_commitment(commitment.clone())?
         }
     }
 

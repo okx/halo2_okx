@@ -22,5 +22,5 @@ pub struct PoseidonGoldilocksConfig;
 impl GenericConfig for PoseidonGoldilocksConfig {
     type Scalar = GoldilocksField;
     type Hasher = PoseidonHash;
-    type Commitment = MerkleCommitment;
+    type Commitment = MerkleCommitment<GoldilocksField, PoseidonHash>;
 }

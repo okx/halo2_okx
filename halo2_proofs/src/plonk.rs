@@ -84,7 +84,8 @@ where
         hasher.update(s.as_bytes());
 
         // Hash in final Blake2bState
-        // vk.transcript_repr = C::Scalar::from_uniform_bytes(hasher.finalize().as_array());
+        vk.transcript_repr =
+            C::Scalar::from_uniform_bytes(hasher.finalize().as_array()[..8].try_into().unwrap());
 
         vk
     }

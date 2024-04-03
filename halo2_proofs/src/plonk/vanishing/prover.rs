@@ -106,8 +106,8 @@ impl<C: GenericConfig> Committed<C> {
             .collect();
 
         // Hash each h(X) piece
-        for c in h_commitments.iter() {
-            transcript.write_commitment(*c)?;
+        for c in h_commitments.into_iter() {
+            transcript.write_commitment(c)?;
         }
 
         Ok(Constructed {

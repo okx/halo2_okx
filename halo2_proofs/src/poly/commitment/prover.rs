@@ -26,12 +26,12 @@ pub fn create_proof<
     R: RngCore,
     T: TranscriptWrite<C, E>,
 >(
-    params: &Params<C>,
-    mut rng: R,
-    transcript: &mut T,
-    p_poly: &Polynomial<C::Scalar, Coeff>,
-    p_blind: Blind<C::Scalar>,
-    x_3: C::Scalar,
+    _params: &Params<C>,
+    mut _rng: R,
+    _transcript: &mut T,
+    _p_poly: &Polynomial<C::Scalar, Coeff>,
+    _p_blind: Blind<C::Scalar>,
+    _x_3: C::Scalar,
 ) -> io::Result<()> {
     Ok(())
 }

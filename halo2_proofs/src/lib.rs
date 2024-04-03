@@ -8,11 +8,14 @@
 #![deny(missing_docs)]
 // #![deny(unsafe_code)]
 
+pub extern crate alloc;
+
 pub mod arithmetic;
 pub mod circuit;
 pub use pasta_curves as pasta;
 pub mod fields;
 pub mod hash;
+mod maybe_rayon;
 mod multicore;
 pub mod plonk;
 pub mod poly;

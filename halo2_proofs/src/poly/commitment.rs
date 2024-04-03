@@ -11,22 +11,57 @@ use ff::Field;
 use std::marker::PhantomData;
 use std::ops::{Add, AddAssign, Mul, MulAssign};
 
+mod fri;
 mod merkle_tree;
 mod prover;
 mod verifier;
 
 use crate::plonk::config::GenericConfig;
+pub use fri::*;
 pub use merkle_tree::*;
 pub use prover::create_proof;
 pub use verifier::verify_proof;
 
 use std::io;
 
+///
+#[derive(Clone, Debug)]
+pub struct Config {
+    ///
+    pub k: u32,
+    ///
+    pub fri_config: FriConfig,
+}
+
+impl Default for Config {
+    fn default() -> Self {
+        Self::standard_recursion_config()
+    }
+}
+
+impl Config {
+    /// A typical recursion config, without zero-knowledge, targeting ~100 bit security.
+    pub fn standard_recursion_config() -> Self {
+        Self {
+            k: 22,
+            fri_config: FriConfig {
+                hiding: true,
+                rate_bits: 3,
+                cap_height: 4,
+                proof_of_work_bits: 16,
+                reduction_strategy: FriReductionStrategy::ConstantArityBits(4, 5),
+                num_query_rounds: 28,
+            },
+        }
+    }
+}
+
 /// These are the public parameters for the polynomial commitment scheme.
 #[derive(Clone, Debug)]
 pub struct Params<C: GenericConfig> {
     pub(crate) k: u32,
     pub(crate) n: u64,
+    pub(crate) fri_params: FriParams,
 
     _marker: PhantomData<C>,
 }
@@ -34,7 +69,8 @@ pub struct Params<C: GenericConfig> {
 impl<C: GenericConfig> Params<C> {
     /// Initializes parameters for the curve, given a random oracle to draw
     /// points from.
-    pub fn new(k: u32) -> Self {
+    pub fn new(config: Config) -> Self {
+        let k = config.k;
         // This is usually a limitation on the curve, but we also want 32-bit
         // architectures to be supported.
         assert!(k < 32);
@@ -43,9 +79,25 @@ impl<C: GenericConfig> Params<C> {
 
         let n: u64 = 1 << k;
 
+        let fri_config = config.fri_config;
+        let degree_bits = k as usize;
+
+        let reduction_arity_bits = fri_config.reduction_strategy.reduction_arity_bits(
+            degree_bits,
+            fri_config.rate_bits,
+            fri_config.cap_height,
+            fri_config.num_query_rounds,
+        );
+        let fri_params = FriParams {
+            config: fri_config,
+            degree_bits: k as usize,
+            reduction_arity_bits,
+        };
+
         Params {
             k,
             n,
+            fri_params,
             _marker: PhantomData,
         }
     }
@@ -102,9 +154,24 @@ impl<C: GenericConfig> Params<C> {
 
         let n: u64 = 1 << k;
 
+        // TODO(fix it)
+        let fri_params = FriParams {
+            config: FriConfig {
+                rate_bits: 0,
+                proof_of_work_bits: 0,
+                cap_height: 0,
+                hiding: false,
+                num_query_rounds: 0,
+                reduction_strategy: FriReductionStrategy::ConstantArityBits(0, 0),
+            },
+            degree_bits: k as usize,
+            reduction_arity_bits: vec![],
+        };
+
         Ok(Params {
             k,
             n,
+            fri_params,
             _marker: PhantomData,
         })
     }
@@ -168,7 +235,9 @@ fn test_commit_lagrange_epaffine() {
 
     use crate::fields::GoldilocksField;
     use crate::plonk::PoseidonGoldilocksConfig;
-    let params = Params::<PoseidonGoldilocksConfig>::new(K);
+    let config = Config::default();
+    config.k = K;
+    let params = Params::<PoseidonGoldilocksConfig>::new(config);
     let domain = super::EvaluationDomain::new(1, K);
 
     let mut a = domain.empty_lagrange();
@@ -281,7 +350,4 @@ fn test_opening_proof() {
 }
 
 ///
-pub trait Commitment<F: Field64, H: Hasher<F>>:
-    std::fmt::Debug + Clone + Copy + Sync + Sized
-{
-}
+pub trait Commitment<F: Field64, H: Hasher<F>>: std::fmt::Debug + Clone + Sync + Sized {}

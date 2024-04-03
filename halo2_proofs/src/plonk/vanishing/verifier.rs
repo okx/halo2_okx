@@ -90,7 +90,7 @@ impl<C: GenericConfig> Constructed<C> {
 impl<C: GenericConfig> PartiallyEvaluated<C> {
     pub(in crate::plonk) fn verify(
         self,
-        params: &Params<C>,
+        _params: &Params<C>,
         expressions: impl Iterator<Item = C::Scalar>,
         y: ChallengeY<C>,
         xn: C::Scalar,

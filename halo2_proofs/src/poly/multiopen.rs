@@ -74,7 +74,7 @@ impl<'r, C: GenericConfig> VerifierQuery<'r, C> {
 }
 
 #[allow(clippy::upper_case_acronyms)]
-#[derive(Copy, Clone, Debug)]
+#[derive(Clone, Debug)]
 enum CommitmentReference<'r, C: GenericConfig> {
     Commitment(&'r C::Commitment),
     // MSM(&'r commitment::MSM<'params, C>),
@@ -112,7 +112,7 @@ impl<F, T: PartialEq> CommitmentData<F, T> {
 }
 
 trait Query<F>: Sized {
-    type Commitment: PartialEq + Copy;
+    type Commitment: PartialEq + Clone;
     type Eval: Clone + Default;
 
     fn get_point(&self) -> F;
@@ -176,7 +176,7 @@ where
         }
 
         // Push point_index_set to CommitmentData for the relevant commitment
-        commitment_set_map.push((commitment_data.commitment, point_index_set.clone()));
+        commitment_set_map.push((commitment_data.commitment.clone(), point_index_set.clone()));
 
         let num_sets = point_idx_sets.len();
         point_idx_sets.entry(point_index_set).or_insert(num_sets);

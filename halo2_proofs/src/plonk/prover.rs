@@ -96,8 +96,8 @@ pub fn create_proof<
                 .map(|poly| params.commit_lagrange(poly, Blind::default()))
                 .collect();
 
-            for commitment in &instance_commitments {
-                transcript.common_commitment(*commitment)?;
+            for commitment in instance_commitments {
+                transcript.common_commitment(commitment)?;
             }
 
             let instance_polys: Vec<_> = instance_values
@@ -304,8 +304,8 @@ pub fn create_proof<
                 .map(|(poly, blind)| params.commit_lagrange(poly, *blind))
                 .collect();
 
-            for commitment in &advice_commitments {
-                transcript.write_commitment(*commitment)?;
+            for commitment in advice_commitments {
+                transcript.write_commitment(commitment)?;
             }
 
             let advice_polys: Vec<_> = advice
@@ -721,6 +721,7 @@ fn test_create_proof() {
     use crate::{
         circuit::SimpleFloorPlanner,
         plonk::{keygen_pk, keygen_vk, PoseidonGoldilocksConfig},
+        poly::commitment::Config,
         transcript::{Challenge64, PoseidonWrite},
     };
     use rand_core::OsRng;
@@ -748,7 +749,10 @@ fn test_create_proof() {
         }
     }
 
-    let params: Params<PoseidonGoldilocksConfig> = Params::new(3);
+    let config = Config::default();
+    config.k = 3;
+
+    let params: Params<PoseidonGoldilocksConfig> = Params::new(config);
     let vk = keygen_vk(&params, &MyCircuit).expect("keygen_vk should not fail");
     let pk = keygen_pk(&params, vk, &MyCircuit).expect("keygen_pk should not fail");
     let mut transcript = PoseidonWrite::<_, _, Challenge64<_>>::init(vec![]);

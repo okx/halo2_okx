@@ -9,9 +9,9 @@ use crate::plonk::config::GenericConfig;
 /// `v`. The provided `msm` should evaluate to the commitment `P` being opened.
 pub fn verify_proof<'a, C: GenericConfig, E: EncodedChallenge<C>, T: TranscriptRead<C, E>>(
     params: &'a Params<C>,
-    transcript: &mut T,
-    x: C::Scalar,
+    _transcript: &mut T,
+    _x: C::Scalar,
 ) -> Result<(), Error> {
-    let k = params.k as usize;
+    let _k = params.k as usize;
     Ok(())
 }

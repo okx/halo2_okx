@@ -135,6 +135,6 @@ impl<'a, C: GenericConfig> Query<C::Scalar> for VerifierQuery<'a, C> {
         self.eval
     }
     fn get_commitment(&self) -> Self::Commitment {
-        self.commitment
+        self.commitment.clone()
     }
 }

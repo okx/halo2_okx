@@ -7,11 +7,16 @@ use crate::{
 };
 
 use super::{Coeff, ExtendedLagrangeCoeff, LagrangeCoeff, Polynomial, Rotation};
+use crate::maybe_rayon::*;
+use rand_core::OsRng;
 
 use ff::WithSmallOrderMulGroup;
 use group::ff::{BatchInvert, Field};
 
 use std::marker::PhantomData;
+
+/// Four (~64 bit) field elements gives ~128 bit security.
+pub const SALT_SIZE: usize = 4;
 
 /// This structure contains precomputed constants and other details needed for
 /// performing operations on an evaluation domain of size $2^k$ and an extended
@@ -249,6 +254,42 @@ impl<F: WithSmallOrderMulGroup<3>> EvaluationDomain<F> {
             values: a.values,
             _marker: PhantomData,
         }
+    }
+
+    ///
+    // TODO(fix return type)
+    pub fn lde_values(
+        &self,
+        polynomials: &[Polynomial<F, Coeff>],
+        rate_bits: usize,
+        blinding: bool,
+    ) -> Vec<Vec<F>> {
+        let degree = polynomials[0].len();
+
+        // If blinding, salt with two random elements to each leaf vector.
+        let salt_size = if blinding { SALT_SIZE } else { 0 };
+
+        polynomials
+            .par_iter()
+            .map(|p| {
+                assert_eq!(p.len(), degree, "Polynomial degrees inconsistent");
+                let mut a = p.lde(rate_bits);
+                self.distribute_powers_zeta(&mut a.values, true);
+
+                // get extend_k only used in lde
+                let mut lde_k = self.k;
+                while (1 << lde_k) < (self.n * rate_bits as u64) {
+                    lde_k += 1;
+                }
+                best_fft(&mut a.values, F::ROOT_OF_UNITY, lde_k);
+                a.values
+            })
+            .chain(
+                (0..salt_size)
+                    .into_par_iter()
+                    .map(|_| (0..degree << rate_bits).map(|_| F::random(OsRng)).collect()),
+            )
+            .collect()
     }
 
     /// Rotate the extended domain polynomial over the original domain.
